@@ -1,0 +1,2 @@
+# 复制为 local.properties，并将路径替换为本机 Android SDK 安装位置。
+sdk.dir=/absolute/path/to/Android/Sdk

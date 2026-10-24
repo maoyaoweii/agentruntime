@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  /* 这份 HTML 是 activity_main.xml 的 1:1 还原：
+     颜色取自 res/values/colors.xml，间距/字号取自布局文件（dp = CSS px）。
+     它用于在没有设备时查看界面长什么样，**不是截图**。 */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #000; }
+  body {
+    font-family: Consolas, "Microsoft YaHei", monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+  .screen {
+    width: 411px; height: 891px; background: #0B0C0E;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .statusbar {
+    height: 24px; flex: none; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 14px;
+    color: #6C7484; font-size: 11px;
+  }
+  .topbar {
+    flex: none; display: flex; align-items: center;
+    padding: 10px 6px 10px 14px;
+  }
+  .caret { color: #7AA2F7; font-size: 15px; line-height: 1; }
+  .brand { color: #E6E9EF; font-size: 14px; font-weight: 700; margin-left: 2px; }
+  .session { color: #6C7484; font-size: 11px; margin-left: 8px; flex: 1;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topaction { color: #9AA3B2; font-size: 12px; padding: 8px 10px; }
+
+  .divider { height: 1px; background: #1B1E24; flex: none; }
+
+  .statusstrip { flex: none; display: flex; padding: 8px 14px; white-space: nowrap; }
+  .chip-status { font-size: 10.5px; margin-right: 9px; }
+  .ok { color: #56D364; } .warn { color: #E3B341; } .bad { color: #F85149; }
+  .dim { color: #6C7484; } .accent { color: #7AA2F7; }
+
+  .transcript { flex: 1; padding: 14px 14px 10px; overflow: hidden; }
+
+  .user {
+    background: #14171C; border-left: 2px solid #7AA2F7; border-radius: 8px;
+    padding: 10px 10px 10px 12px; color: #E6E9EF; font-size: 13.5px;
+    margin-bottom: 10px;
+  }
+  .section {
+    color: #6C7484; font-size: 10.5px; letter-spacing: 1.5px;
+    margin: 12px 0 12px;
+  }
+  .tool { color: #7AA2F7; font-size: 13.5px; margin-bottom: 6px; }
+  .tool .args { color: #7C8595; }
+  .result { font-size: 12.5px; margin: 0 0 10px 14px; }
+  .summary {
+    font-size: 13px; padding: 8px 10px; border-radius: 4px;
+    background: #12261A; color: #56D364; margin: 14px 0;
+  }
+  .note { color: #7C8595; font-size: 12.5px; margin-bottom: 4px; }
+  .note .tag { color: #7C8595; }
+
+  .composerwrap { flex: none; background: #121418; padding: 10px 12px 8px; }
+  .composerwrap .divider { margin-bottom: 10px; }
+  .composer {
+    background: #121418; border: 1px solid #262A31; border-radius: 14px;
+    padding: 8px; display: flex; align-items: flex-end;
+  }
+  .prompt { color: #7AA2F7; font-size: 15px; margin: 0 6px 6px 0; line-height: 1; }
+  .input { flex: 1; color: #6C7484; font-size: 13.5px; padding: 6px 0; }
+  .runbtn {
+    background: #7AA2F7; color: #0B0C0E; font-size: 13px; font-weight: 700;
+    border-radius: 10px; padding: 8px 14px; margin-left: 8px;
+  }
+  .chips { display: flex; margin-top: 8px; }
+  .chip {
+    border: 1px solid #262A31; border-radius: 100px; color: #9AA3B2;
+    font-size: 11.5px; padding: 6px 11px; margin-right: 8px;
+  }
+  .footer { display: flex; align-items: center; margin-top: 8px; }
+  .check { width: 14px; height: 14px; border: 1.5px solid #7AA2F7; border-radius: 3px;
+           background: #7AA2F7; position: relative; margin-right: 6px; }
+  .check:after { content: ""; position: absolute; left: 3px; top: 0px;
+                 width: 4px; height: 8px; border: solid #0B0C0E;
+                 border-width: 0 2px 2px 0; transform: rotate(42deg); }
+  .footer span { color: #9AA3B2; font-size: 11px; }
+  .version { color: #6C7484; font-size: 10.5px; margin-left: 10px; }
+  .running { color: #E3B341; font-size: 10.5px; margin-left: auto; }
+
+  .caption {
+    width: 411px; padding: 10px 14px 12px; background: #000;
+    color: #7C8595; font-size: 11px; line-height: 1.5;
+    font-family: Consolas, "Microsoft YaHei", monospace;
+  }
+  .caption b { color: #E3B341; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="statusbar"><span>10:18</span><span>▮▮▮ ⌁ 82%</span></div>
+
+  <div class="topbar">
+    <span class="caret">▌</span>
+    <span class="brand">agent runtime</span>
+    <span class="session">· t_8f3a1c</span>
+    <span class="topaction">控制台</span>
+    <span class="topaction">技能</span>
+    <span class="topaction">设置</span>
+  </div>
+  <div class="divider"></div>
+
+  <div class="statusstrip">
+    <span class="chip-status ok">a11y on</span>
+    <span class="chip-status ok">cap on</span>
+    <span class="chip-status warn">ovl idle</span>
+    <span class="chip-status ok">mdl nb</span>
+    <span class="chip-status dim">ime off</span>
+    <span class="chip-status dim">skills 23</span>
+    <span class="chip-status warn">rom MIUI</span>
+  </div>
+  <div class="divider"></div>
+
+  <div class="transcript">
+    <div class="user">› 观察当前设备环境，然后截图留证</div>
+
+    <div class="section">── 运行 ────────────────────────</div>
+
+    <div class="tool">● sys.observe <span class="args">step 1/2</span></div>
+    <div class="result ok">↳ ✓ OK · 312ms</div>
+
+    <div class="tool">● sys.screenshot <span class="args">step 2/2</span></div>
+    <div class="result ok">↳ ✓ OK · 1180ms</div>
+
+    <div class="summary">✓ 任务完成：SUCCESS</div>
+    <div class="note"><span class="tag">  plan</span>  规划完成 → t_8f3a1c</div>
+  </div>
+
+  <div class="composerwrap">
+    <div class="divider"></div>
+    <div class="composer">
+      <span class="prompt">›</span>
+      <span class="input">告诉我要做什么…</span>
+      <span class="runbtn">运行</span>
+    </div>
+    <div class="chips">
+      <span class="chip">观察环境</span>
+      <span class="chip">截图留证</span>
+      <span class="chip">工具冒烟</span>
+      <span class="chip">技能库</span>
+      <span class="chip">悬浮球</span>
+    </div>
+    <div class="footer">
+      <span class="check"></span>
+      <span>自动确认</span>
+      <span class="version">v1.6.0&nbsp; api30&nbsp; act40&nbsp; sk23</span>
+      <span class="running"></span>
+    </div>
+  </div>
+</div>
+
+<div class="caption">
+  <b>设计还原图，不是真机截图。</b>按 activity_main.xml 的色值与间距 1:1 还原，
+  用于在没有设备时查看界面形态。本机模拟器因固件 SVM 未开启而无法启动。
+</div>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/bubble_root"
+    android:layout_width="60dp"
+    android:layout_height="60dp">
+
+    <ImageView
+        android:id="@+id/bubble_icon"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:background="@drawable/bg_bubble"
+        android:padding="16dp"
+        android:src="@drawable/ic_bot"
+        android:elevation="6dp"
+        android:contentDescription="打开快捷面板" />
+
+    <TextView
+        android:id="@+id/bubble_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:background="@drawable/bg_badge_danger"
+        android:minWidth="18dp"
+        android:paddingStart="5dp"
+        android:paddingEnd="5dp"
+        android:paddingTop="1dp"
+        android:paddingBottom="1dp"
+        android:gravity="center"
+        android:text=""
+        android:textColor="@color/danger"
+        android:textSize="10sp"
+        android:visibility="gone" />
+</FrameLayout>

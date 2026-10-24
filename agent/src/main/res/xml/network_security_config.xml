@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文 HTTP 默认仍然禁止（与 Android 9+ 默认行为一致）。
+  只对回环/本机地址放开：本地网页与自建 fixture 服务是"控制浏览器读本地页面"
+  能力的真实使用场景，去掉这一项会让内置 WebView 连 127.0.0.1 / 10.0.2.2 都打不开，
+  表现为 net::ERR_CLEARTEXT_NOT_PERMITTED 而页面永远空白。
+  这不是放开任意明文流量：其余域名依旧强制 HTTPS。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

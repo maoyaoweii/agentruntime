@@ -1,0 +1,13 @@
+{
+  "skill_id": "sys.screenshot",
+  "version": "1.1",
+  "target_package": null,
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": [],
+  "steps": [
+    {"action": "screenshot", "params": {"max_edge": 1024, "quality": 70}, "timeout_ms": 15000}
+  ]
+}

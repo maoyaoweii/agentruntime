@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="btn_attach_alt" type="id" />
+    <item name="btn_send_alt" type="id" />
+    <item name="btn_send_file_alt" type="id" />
+</resources>

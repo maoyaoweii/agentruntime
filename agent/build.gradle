@@ -1,0 +1,87 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.agentruntime.agent'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.agentruntime.agent'
+        minSdk 26
+        targetSdk 34
+        versionCode 7
+        versionName '1.6.0'
+        testInstrumentationRunner 'com.agentruntime.DeviceSmokeInstrumentation'
+        // 两个 ABI 都打进去：
+        // - arm64-v8a 覆盖 2020 年后的真机（99% 的现役设备）
+        // - x86_64 覆盖本机模拟器与少数 x86 平板/Chromebook
+        // 代价是 APK 多出约 13MB（ONNX Runtime 的 x86_64 .so）。
+        // V1.5 之前只打 arm64，结果是"代码能在模拟器上装，但一旦真去加载 native 库就崩"——
+        // 那种"能装不能跑"的支持是假支持，不如老老实实多带一份。
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Debug only: adb/instrumentation may explicitly launch TaskExecActivity.
+            manifestPlaceholders.taskExecExported = 'true'
+            minifyEnabled false
+        }
+        release {
+            // Production boundary: TaskExecActivity is not an external entry point.
+            manifestPlaceholders.taskExecExported = 'false'
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+        // Robolectric 要读真实资源（layout/color/style），必须打开
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            // Robolectric 会在测试期去 Maven Central 拉 android-all jar，
+            // 这一步走的是测试 JVM 自己的网络栈，不继承 Gradle 的代理配置，
+            // 所以要把代理显式传进去，否则国内网络下会卡到超时。
+            def proxy = System.getenv('HTTPS_PROXY') ?: System.getenv('HTTP_PROXY')
+            if (proxy) {
+                def m = proxy =~ /(\d+\.\d+\.\d+\.\d+):(\d+)/
+                if (m.find()) {
+                    systemProperty 'http.proxyHost', m.group(1)
+                    systemProperty 'http.proxyPort', m.group(2)
+                    systemProperty 'https.proxyHost', m.group(1)
+                    systemProperty 'https.proxyPort', m.group(2)
+                }
+            }
+            systemProperty 'robolectric.logging', 'stdout'
+            maxHeapSize = '2g'
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // 端侧视觉语言模型推理：这是"内置模型"能跑起来的前提
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.18.0'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+    // 在 JVM 里跑真实 Android 运行时：布局能否 inflate、各机型尺寸下会不会崩，
+    // 这两件事不需要真机就能验。NATIVE 图形模式下还能把布局真画成 PNG。
+    testImplementation 'org.robolectric:robolectric:4.11.1'
+}

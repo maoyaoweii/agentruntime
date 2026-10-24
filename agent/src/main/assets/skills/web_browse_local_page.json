@@ -1,0 +1,18 @@
+{
+  "skill_id": "web.browse_local_page",
+  "version": "1.0",
+  "target_package": "org.chromium.webview_shell",
+  "args": ["url", "marker"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": ["ui_contains:${marker}"],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "org.chromium.webview_shell"}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"package": "org.chromium.webview_shell", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "input_text", "params": {"find": {"resource_id": "url_field", "editable": true}, "text": "${url}"}, "timeout_ms": 30000},
+    {"action": "click_node", "params": {"find": {"desc": "Load URL", "clickable": true}}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"ui_contains": "${marker}", "timeout_ms": 90000}, "timeout_ms": 95000},
+    {"action": "assert_state", "params": {"condition": "ui_contains:${marker}"}, "timeout_ms": 30000}
+  ]
+}

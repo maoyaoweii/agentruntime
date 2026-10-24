@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="选择测试文件"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btn_file_report"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="report.pdf" />
+
+    <Button
+        android:id="@+id/btn_file_photo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="photo.png" />
+
+    <Button
+        android:id="@+id/btn_file_notes"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="notes.txt" />
+</LinearLayout>

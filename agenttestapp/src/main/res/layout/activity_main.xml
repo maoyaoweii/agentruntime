@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/search_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="搜索测试用户"
+            android:inputType="text" />
+
+        <Button
+            android:id="@+id/btn_search"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="搜索" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btn_user_testuser"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="TestUser" />
+
+    <Button
+        android:id="@+id/btn_user_testuser2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="TestUser2" />
+
+    <Button
+        android:id="@+id/btn_user_admin"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Admin" />
+
+    <Button
+        android:id="@+id/btn_form"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="表单测试" />
+
+    <Button
+        android:id="@+id/btn_settings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="设置页" />
+
+    <Button
+        android:id="@+id/btn_fault"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="故障注入" />
+</LinearLayout>

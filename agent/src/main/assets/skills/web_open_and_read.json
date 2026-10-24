@@ -1,0 +1,16 @@
+{
+  "skill_id": "web.open_and_read",
+  "version": "1.1",
+  "target_package": "com.agentruntime.agent",
+  "args": ["url", "max_chars"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": [],
+  "recovery": "若页面未就绪，先 wait_ms 1500 再 read_page",
+  "steps": [
+    {"action": "navigate", "params": {"url": "${url}", "internal": true}, "timeout_ms": 20000},
+    {"action": "wait_ms", "params": {"ms": 800}, "timeout_ms": 5000},
+    {"action": "read_page", "params": {"max_chars": 2000}, "timeout_ms": 15000}
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "skill_id": "sys.tool_smoke",
+  "version": "1.0",
+  "target_package": "org.fossify.notes",
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": ["ui_not_contains:AAAA"],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "org.fossify.notes"}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"package": "org.fossify.notes", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "wait_for", "params": {"ui_contains": "Create a new note", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "input_text", "params": {"find": {"resource_id": "text_note_view", "editable": true}, "text": "AAAA"}, "timeout_ms": 30000},
+    {"action": "clear_text", "params": {"find": {"resource_id": "text_note_view", "editable": true}}, "timeout_ms": 20000},
+    {"action": "input_text", "params": {"find": {"resource_id": "text_note_view", "editable": true}, "text": "SMOKE_MARK"}, "timeout_ms": 30000},
+    {"action": "wait_ms", "params": {"ms": 800}, "timeout_ms": 5000},
+    {"action": "assert_state", "params": {"condition": "ui_contains:SMOKE_MARK"}, "timeout_ms": 15000},
+    {"action": "assert_state", "params": {"condition": "ui_not_contains:AAAA"}, "timeout_ms": 15000},
+    {"action": "long_click", "params": {"find": {"resource_id": "text_note_view"}}, "timeout_ms": 20000},
+    {"action": "press_key", "params": {"key": "back"}, "timeout_ms": 5000},
+    {"action": "wait_ms", "params": {"ms": 500}, "timeout_ms": 5000},
+    {"action": "launch_app", "params": {"package": "com.android.deskclock"}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"package": "com.android.deskclock", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "assert_state", "params": {"condition": "package_is:com.android.deskclock"}, "timeout_ms": 15000},
+    {"action": "press_key", "params": {"key": "home"}, "timeout_ms": 5000},
+    {"action": "wait_ms", "params": {"ms": 800}, "timeout_ms": 5000}
+  ]
+}

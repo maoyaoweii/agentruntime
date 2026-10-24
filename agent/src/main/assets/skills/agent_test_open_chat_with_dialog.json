@@ -1,0 +1,23 @@
+{
+  "skill_id": "agent_test.open_chat_with_dialog",
+  "version": "1.0",
+  "target_package": "com.agenttestapp",
+  "args": ["contact_alias"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "dialog window is the active window; expected end state is the dialog visible",
+  "postconditions": ["ui_contains:权限提示"],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "com.agenttestapp"}, "timeout_ms": 40000},
+    {"action": "wait_for", "params": {"package": "com.agenttestapp", "ui_contains": "搜索"}, "timeout_ms": 60000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_fault", "text": "故障注入", "contains": "故障", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "wait_for", "params": {"ui_contains": "弹窗注入"}, "timeout_ms": 60000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_inject_dialog", "contains": "弹窗注入", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_back_main", "text": "返回主页", "contains": "返回", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"resource_id": "search_input", "editable": true}}, "timeout_ms": 40000},
+    {"action": "input_text", "params": {"find": {"resource_id": "search_input", "editable": true}, "text": "${contact_alias}"}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_search", "text": "搜索", "contains": "搜索", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"contains": "${contact_alias}", "class_name": "Button", "clickable": true}}, "timeout_ms": 40000}
+  ]
+}

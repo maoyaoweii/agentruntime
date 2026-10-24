@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="console"
+        android:enabled="true"
+        android:icon="@drawable/ic_bot"
+        android:shortcutShortLabel="@string/shortcut_console_short"
+        android:shortcutLongLabel="@string/shortcut_console_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.agentruntime.agent"
+            android:targetClass="com.agentruntime.ui.ConsoleActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="observe"
+        android:enabled="true"
+        android:icon="@drawable/ic_bot"
+        android:shortcutShortLabel="@string/shortcut_observe_short"
+        android:shortcutLongLabel="@string/shortcut_observe_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.agentruntime.agent"
+            android:targetClass="com.agentruntime.ui.ConsoleActivity">
+            <extra android:name="goal" android:value="观察当前设备环境" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="settings"
+        android:enabled="true"
+        android:icon="@drawable/ic_settings"
+        android:shortcutShortLabel="@string/shortcut_settings_short"
+        android:shortcutLongLabel="@string/shortcut_settings_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.agentruntime.agent"
+            android:targetClass="com.agentruntime.ui.SettingsActivity" />
+    </shortcut>
+</shortcuts>

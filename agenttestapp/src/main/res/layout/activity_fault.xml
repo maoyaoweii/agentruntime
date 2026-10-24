@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <Button
+        android:id="@+id/btn_inject_dialog"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="弹窗注入：关" />
+
+    <Button
+        android:id="@+id/btn_show_dialog"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="立即弹窗" />
+
+    <Button
+        android:id="@+id/btn_loading"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="加载中" />
+
+    <Button
+        android:id="@+id/btn_page_upgrade"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="页面升级模拟" />
+
+    <Button
+        android:id="@+id/btn_notify"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="测试通知" />
+
+    <Button
+        android:id="@+id/btn_back_main"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="返回主页" />
+
+    <ProgressBar
+        android:id="@+id/loading_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal" />
+</LinearLayout>

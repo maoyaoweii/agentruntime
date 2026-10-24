@@ -1,0 +1,17 @@
+{
+  "skill_id": "sys.open_clock",
+  "version": "1.0",
+  "target_package": "com.android.deskclock",
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": ["package_is:com.android.deskclock"],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "com.android.deskclock"}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"package": "com.android.deskclock", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "click_node", "params": {"find": {"desc": "More options", "clickable": true}}, "timeout_ms": 30000},
+    {"action": "assert_state", "params": {"condition": "package_is:com.android.deskclock"}, "timeout_ms": 20000},
+    {"action": "recover", "params": {}, "timeout_ms": 15000}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "skill_id": "notes.create_note",
+  "version": "1.0",
+  "target_package": "org.fossify.notes",
+  "args": ["title", "content"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": ["ui_contains:${title}", "ui_contains:${content}"],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "org.fossify.notes"}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"package": "org.fossify.notes", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "click_node", "params": {"find": {"resource_id": "new_note", "clickable": true}}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"ui_contains": "Add a new note", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "input_text", "params": {"find": {"resource_id": "locked_note_title", "editable": true}, "text": "${title}"}, "timeout_ms": 30000},
+    {"action": "click_node", "params": {"find": {"resource_id": "button1", "text": "OK", "clickable": true}}, "timeout_ms": 30000},
+    {"action": "wait_for", "params": {"ui_contains": "${title}", "timeout_ms": 30000}, "timeout_ms": 35000},
+    {"action": "input_text", "params": {"find": {"resource_id": "text_note_view", "editable": true}, "text": "${content}"}, "timeout_ms": 30000},
+    {"action": "assert_state", "params": {"condition": "ui_contains:${title}"}, "timeout_ms": 20000},
+    {"action": "assert_state", "params": {"condition": "ui_contains:${content}"}, "timeout_ms": 20000}
+  ]
+}

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/wifi_state"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="16sp"
+        android:text="Wi-Fi 状态：已开启" />
+
+    <Switch
+        android:id="@+id/wifi_toggle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Wi-Fi 开关（不应被切换）" />
+
+    <Button
+        android:id="@+id/btn_back_main"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="返回主页" />
+</LinearLayout>

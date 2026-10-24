@@ -1,0 +1,14 @@
+{
+  "skill_id": "agent_test.read_wifi",
+  "version": "1.0",
+  "target_package": "com.agenttestapp",
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": ["wifi_state_read"],
+  "steps": [
+    {"action": "read_state", "params": {"find": {"resource_id": "wifi_state"}}, "timeout_ms": 40000},
+    {"action": "assert_state", "params": {"condition": "wifi_state_read"}}
+  ]
+}

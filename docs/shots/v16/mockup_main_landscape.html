@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  /* 横屏还原：layout-land/activity_main.xml —— 左流水 + 右 248dp 状态栏。
+     同样：**不是截图**。 */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #000; }
+  body { font-family: Consolas, "Microsoft YaHei", monospace; -webkit-font-smoothing: antialiased; }
+  .screen {
+    width: 891px; height: 411px; background: #0B0C0E; display: flex; overflow: hidden;
+  }
+  .left { width: 642px; display: flex; flex-direction: column; }
+  .right { width: 248px; background: #121418; border-left: 1px solid #1B1E24;
+           padding: 14px; display: flex; flex-direction: column; }
+
+  .topbar { display: flex; align-items: center; padding: 8px 14px; }
+  .caret { color: #7AA2F7; font-size: 15px; }
+  .brand { color: #E6E9EF; font-size: 14px; font-weight: 700; margin-left: 2px; }
+  .session { color: #6C7484; font-size: 11px; margin-left: 8px; }
+
+  .divider { height: 1px; background: #1B1E24; }
+
+  .transcript { flex: 1; padding: 12px 14px 8px; overflow: hidden; }
+  .user { background: #14171C; border-left: 2px solid #7AA2F7; border-radius: 8px;
+          padding: 9px 10px 9px 12px; color: #E6E9EF; font-size: 13.5px; margin-bottom: 9px; }
+  .section { color: #6C7484; font-size: 10.5px; letter-spacing: 1.4px; margin: 9px 0 9px; }
+  .tool { color: #7AA2F7; font-size: 13.5px; margin-bottom: 5px; }
+  .tool .args { color: #7C8595; }
+  .result { font-size: 12.5px; margin: 0 0 8px 14px; }
+  .summary { font-size: 13px; padding: 7px 10px; border-radius: 4px;
+             background: #12261A; color: #56D364; margin: 10px 0; }
+
+  .composerwrap { background: #121418; padding: 8px 12px 6px; }
+  .composer { background: #121418; border: 1px solid #262A31; border-radius: 14px;
+              padding: 8px; display: flex; align-items: flex-end; }
+  .prompt { color: #7AA2F7; font-size: 15px; margin: 0 6px 6px 0; }
+  .input { flex: 1; color: #6C7484; font-size: 13.5px; padding: 6px 0; }
+  .runbtn { background: #7AA2F7; color: #0B0C0E; font-size: 13px; font-weight: 700;
+            border-radius: 10px; padding: 8px 14px; margin-left: 8px; }
+  .footer { display: flex; align-items: center; margin-top: 6px; }
+  .check { width: 14px; height: 14px; border-radius: 3px; background: #7AA2F7;
+           position: relative; margin-right: 6px; }
+  .check:after { content: ""; position: absolute; left: 3px; top: 0;
+                 width: 4px; height: 8px; border: solid #0B0C0E;
+                 border-width: 0 2px 2px 0; transform: rotate(42deg); }
+  .footer span { color: #9AA3B2; font-size: 11px; }
+  .running { color: #E3B341; font-size: 10.5px; margin-left: auto; }
+
+  .label { color: #6C7484; font-size: 10.5px; letter-spacing: 1.4px; }
+  .st { font-size: 11px; margin-top: 8px; }
+  .ok { color: #56D364; } .warn { color: #E3B341; } .dim { color: #6C7484; }
+  .entry { color: #9AA3B2; font-size: 12px; padding: 8px 0 8px 0; }
+  .spacer { flex: 1; }
+  .version { color: #6C7484; font-size: 10.5px; }
+
+  .caption { width: 891px; padding: 10px 14px 12px; background: #000; color: #7C8595;
+             font-size: 11px; line-height: 1.5; font-family: Consolas, "Microsoft YaHei", monospace; }
+  .caption b { color: #E3B341; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="left">
+    <div class="topbar">
+      <span class="caret">▌</span>
+      <span class="brand">agent runtime</span>
+      <span class="session">· t_8f3a1c</span>
+    </div>
+    <div class="divider"></div>
+
+    <div class="transcript">
+      <div class="user">› 观察当前设备环境，然后截图留证</div>
+      <div class="section">── 运行 ────────────────</div>
+      <div class="tool">● sys.observe <span class="args">step 1/2</span></div>
+      <div class="result ok">↳ ✓ OK · 312ms</div>
+      <div class="tool">● sys.screenshot <span class="args">step 2/2</span></div>
+      <div class="result ok">↳ ✓ OK · 1180ms</div>
+      <div class="summary">✓ 任务完成：SUCCESS</div>
+    </div>
+
+    <div class="composerwrap">
+      <div class="composer">
+        <span class="prompt">›</span>
+        <span class="input">告诉我要做什么…</span>
+        <span class="runbtn">运行</span>
+      </div>
+      <div class="footer">
+        <span class="check"></span>
+        <span>自动确认</span>
+        <span class="running"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="label">STATUS</div>
+    <div class="st ok">a11y on</div>
+    <div class="st ok">cap on</div>
+    <div class="st warn">ovl idle</div>
+    <div class="st ok">mdl nb</div>
+    <div class="st dim">ime off</div>
+    <div class="st dim">skills 23</div>
+    <div class="st warn">rom MIUI</div>
+
+    <div class="divider" style="margin:14px 0 10px"></div>
+    <div class="label">QUICK</div>
+    <div class="entry">观察环境</div>
+    <div class="entry">截图留证</div>
+    <div class="entry">工具冒烟</div>
+
+    <div class="divider" style="margin:12px 0 10px"></div>
+    <div class="entry">› 控制台</div>
+    <div class="entry">› 技能库</div>
+    <div class="entry">› 设置</div>
+
+    <div class="spacer"></div>
+    <div class="version">v1.6.0  api30  act40  sk23</div>
+  </div>
+</div>
+
+<div class="caption">
+  <b>设计还原图，不是真机截图。</b>按 layout-land/activity_main.xml 还原的横屏两栏形态：
+  左侧执行流水，右侧 248dp 状态与快捷入口。
+</div>
+</body>
+</html>

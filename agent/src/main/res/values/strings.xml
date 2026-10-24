@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AgentRuntime</string>
+    <string name="a11y_service_label">AgentRuntime 辅助服务</string>
+    <string name="a11y_service_description">用于读取界面结构并按受控任务计划执行点击、输入等操作。仅在任务执行期间使用，数据按最小化原则处理。</string>
+
+    <string name="title_settings">设置</string>
+    <string name="title_console">任务控制台</string>
+    <string name="title_skills">技能库</string>
+
+    <string name="shortcut_console_short">控制台</string>
+    <string name="shortcut_console_long">打开任务控制台执行任务</string>
+    <string name="shortcut_observe_short">观察环境</string>
+    <string name="shortcut_observe_long">采集当前设备环境快照</string>
+    <string name="shortcut_settings_short">设置</string>
+    <string name="shortcut_settings_long">权限、模型与自检</string>
+
+    <string name="ime_label">AgentRuntime 输入法</string>
+    <string name="ime_description">供 Agent 向输入框注入文本。仅在任务执行时使用，不记录输入内容。</string>
+</resources>

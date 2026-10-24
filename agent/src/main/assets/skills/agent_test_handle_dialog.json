@@ -1,0 +1,16 @@
+{
+  "skill_id": "agent_test.handle_dialog",
+  "version": "1.0",
+  "target_package": "com.agenttestapp",
+  "args": ["policy"],
+  "risk": "MEDIUM",
+  "confirmation": "never",
+  "max_retries": 2,
+  "recovery": "unknown dialogs are not clicked; only whitelisted allow button",
+  "postconditions": ["ui_contains:消息"],
+  "steps": [
+    {"action": "wait_for", "params": {"ui_contains": "权限提示"}, "timeout_ms": 60000},
+    {"action": "click_node", "params": {"find": {"text": "允许", "contains": "允许", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "wait_for", "params": {"package": "com.agenttestapp", "ui_contains": "消息"}, "timeout_ms": 60000}
+  ]
+}

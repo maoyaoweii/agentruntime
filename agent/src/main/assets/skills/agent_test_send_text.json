@@ -1,0 +1,16 @@
+{
+  "skill_id": "agent_test.send_text",
+  "version": "1.0",
+  "target_package": "com.agenttestapp",
+  "args": ["text"],
+  "risk": "HIGH",
+  "confirmation": "before_external_send",
+  "max_retries": 2,
+  "postconditions": ["ui_contains:${text}"],
+  "steps": [
+    {"action": "wait_for", "params": {"package": "com.agenttestapp", "ui_contains": "附件"}, "timeout_ms": 60000},
+    {"action": "input_text", "params": {"find": {"resource_id": "text_input", "editable": true}, "text": "${text}"}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_send", "text": "发送", "contains": "发送", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "assert_state", "params": {"condition": "ui_contains:${text}"}}
+  ]
+}

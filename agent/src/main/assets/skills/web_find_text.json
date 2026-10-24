@@ -1,0 +1,13 @@
+{
+  "skill_id": "web.find_text",
+  "version": "1.1",
+  "target_package": "com.agentruntime.agent",
+  "args": ["text"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": [],
+  "steps": [
+    {"action": "page_find", "params": {"text": "${text}"}, "timeout_ms": 12000}
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "skill_id": "agent_test.send_file",
+  "version": "1.0",
+  "target_package": "com.agenttestapp",
+  "args": ["contact_alias", "file_alias"],
+  "risk": "HIGH",
+  "confirmation": "before_external_send",
+  "max_retries": 2,
+  "recovery": "find_node by contains then System-1 candidate selection",
+  "postconditions": ["ui_contains:[文件]"],
+  "steps": [
+    {"action": "wait_for", "params": {"package": "com.agenttestapp", "ui_contains": "附件"}, "timeout_ms": 60000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_attach", "text": "附件", "contains": "附件", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_attach_file", "text": "文件", "contains": "文件", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "wait_for", "params": {"ui_contains": "${file_alias}"}, "timeout_ms": 60000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_file_report", "contains": "${file_alias}", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_send_file", "text": "发送文件", "contains": "发送", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "assert_state", "params": {"condition": "ui_contains:[文件]"}}
+  ]
+}

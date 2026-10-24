@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      V1.6 配色：Codex 式终端深色。
+      为什么整体换掉而不是加一套"深色模式"：主界面现在是一份会话流水
+      （命令 → 工具调用 → 结果），浅底上看等宽长文本很累，而且状态色
+      （ok/warn/danger）在浅底上被柔化到几乎看不出差别。
+      直接换调色板，四个界面一起变，不留"主页深、设置浅"的割裂。
+    -->
+
+    <!-- 主色：偏冷的靛蓝，在近黑底上够亮但不刺眼 -->
+    <color name="brand">#7AA2F7</color>
+    <color name="brand_dark">#3D5AFE</color>
+    <color name="brand_soft">#1A2236</color>
+    <color name="brand_line">#2C3A56</color>
+
+    <color name="bg">#0B0C0E</color>
+    <color name="surface">#121418</color>
+    <color name="surface_alt">#171A1F</color>
+
+    <color name="text_primary">#E6E9EF</color>
+    <color name="text_secondary">#9AA3B2</color>
+    <color name="text_tertiary">#6C7484</color>
+    <color name="text_on_brand">#0B0C0E</color>
+
+    <color name="divider">#1B1E24</color>
+    <color name="stroke">#262A31</color>
+
+    <color name="ok">#56D364</color>
+    <color name="ok_bg">#12261A</color>
+    <color name="warn">#E3B341</color>
+    <color name="warn_bg">#2A2214</color>
+    <color name="danger">#F85149</color>
+    <color name="danger_bg">#2A1618</color>
+    <color name="neutral_bg">#1A1D23</color>
+
+    <!-- 控制台日志区：比主背景略亮，形成层次 -->
+    <color name="console_bg">#0E1014</color>
+    <color name="console_text">#C7CEDA</color>
+    <color name="console_dim">#6C7484</color>
+    <color name="console_ok">#56D364</color>
+    <color name="console_warn">#E3B341</color>
+    <color name="console_err">#F85149</color>
+
+    <!-- 会话流水专用 -->
+    <color name="turn_user_bg">#14171C</color>
+    <color name="composer_bg">#121418</color>
+    <color name="code_inline_bg">#1A1E25</color>
+    <color name="mono_accent">#7AA2F7</color>
+    <color name="mono_dim">#7C8595</color>
+</resources>

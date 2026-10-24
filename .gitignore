@@ -1,0 +1,19 @@
+# 构建产物
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+captures/
+
+# 模拟器 / AVD / 下载缓存
+.avd/
+*.log
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+
+# Python 缓存
+__pycache__/
+*.pyc

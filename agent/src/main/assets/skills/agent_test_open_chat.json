@@ -1,0 +1,18 @@
+{
+  "skill_id": "agent_test.open_chat",
+  "version": "1.0",
+  "target_package": "com.agenttestapp",
+  "args": ["contact_alias"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 2,
+  "postconditions": ["ui_contains:${contact_alias}"],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "com.agenttestapp"}, "timeout_ms": 40000},
+    {"action": "wait_for", "params": {"package": "com.agenttestapp", "ui_contains": "搜索"}, "timeout_ms": 60000},
+    {"action": "input_text", "params": {"find": {"resource_id": "search_input", "editable": true}, "text": "${contact_alias}"}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"resource_id": "btn_search", "text": "搜索", "contains": "搜索", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "click_node", "params": {"find": {"contains": "${contact_alias}", "class_name": "Button", "clickable": true}}, "timeout_ms": 40000},
+    {"action": "assert_state", "params": {"condition": "ui_contains:消息"}}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "skill_id": "web.click_selector",
+  "version": "1.1",
+  "target_package": "com.agentruntime.agent",
+  "args": ["selector", "expect"],
+  "risk": "MEDIUM",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": [],
+  "recovery": "ELEMENT_NOT_FOUND 时先 read_page 确认页面已加载，再重试更宽的选择器",
+  "steps": [
+    {"action": "page_click", "params": {"selector": "${selector}"}, "timeout_ms": 10000},
+    {"action": "wait_ms", "params": {"ms": 500}, "timeout_ms": 3000},
+    {"action": "page_find", "params": {"text": "${expect}"}, "timeout_ms": 10000}
+  ]
+}

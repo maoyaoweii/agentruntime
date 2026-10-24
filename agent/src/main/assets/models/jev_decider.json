@@ -1,0 +1,32 @@
+{
+ "version": "1.0",
+ "kind": "jev_like_linear_decider",
+ "features": [
+  "exact_match",
+  "goal_contains",
+  "label_contains",
+  "overlap",
+  "clickable",
+  "visible",
+  "editable",
+  "area_ratio",
+  "center_bias",
+  "label_len"
+ ],
+ "weights": [
+  0.13787,
+  2.60458,
+  1.31999,
+  2.87238,
+  3.27793,
+  2.1238,
+  0.80758,
+  -1.42431,
+  -0.03413,
+  0.17098
+ ],
+ "train_scenarios": 38,
+ "train_accuracy": 0.9737,
+ "rule_baseline_accuracy": 0.9211,
+ "note": "合成场景训练；真实界面需用真机候选集重训"
+}

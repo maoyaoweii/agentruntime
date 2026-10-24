@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 用户发言块：左侧一条 2dp 强调色竖线 + 淡底，呼应终端里的引用块 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/turn_user_bg"/>
+            <corners android:radius="8dp"/>
+        </shape>
+    </item>
+    <item android:width="2dp" android:gravity="left">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/brand"/>
+            <corners android:radius="8dp"/>
+        </shape>
+    </item>
+</layer-list>

@@ -1,0 +1,13 @@
+{
+  "skill_id": "sys.close_dialogs",
+  "version": "1.0",
+  "target_package": "com.android.deskclock",
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 0,
+  "postconditions": [],
+  "steps": [
+    {"action": "close_system_dialogs", "params": {}, "timeout_ms": 5000}
+  ]
+}

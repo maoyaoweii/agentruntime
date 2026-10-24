@@ -1,0 +1,7 @@
+Manufacturer=Colorful Technology And Development Co.,LTD
+Model=BATTLE-AX B650M-WHITE WIFI
+HypervisorPresent=False
+CPU=AMD Ryzen 9 7900X 12-Core Processor            
+VirtFirmwareEnabled=False
+VMMonitorModeExtensions=True
+SecondLevelAddressTranslation=True

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="com.agentruntime.debug.LocalFixtureActivity"
+            android:exported="false" android:excludeFromRecents="true" />
+        <provider android:name="com.agentruntime.debug.LocalFixtureProvider"
+            android:authorities="com.agentruntime.agent.localfixture"
+            android:exported="true" android:permission="android.permission.DUMP"
+            android:grantUriPermissions="false" />
+    </application>
+</manifest>

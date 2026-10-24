@@ -1,0 +1,4 @@
+HypervisorPresent=False
+VirtFirmware=False
+VMMonitorMode=True
+WHPX=Disabled

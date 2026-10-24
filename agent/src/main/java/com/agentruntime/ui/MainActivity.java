@@ -1,0 +1,434 @@
+package com.agentruntime.ui;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+
+import com.agentruntime.AgentApp;
+import com.agentruntime.agent.BuildConfig;
+import com.agentruntime.agent.R;
+import com.agentruntime.device.RomInfo;
+import com.agentruntime.ime.AgentImeService;
+import com.agentruntime.overlay.OverlayService;
+import com.agentruntime.runtime.TaskBus;
+import com.agentruntime.service.AgentAccessibilityService;
+import com.agentruntime.vision.ScreenCapturer;
+
+import org.json.JSONObject;
+
+import java.util.List;
+
+/**
+ * 主页 = 一份会话流水（Codex 式）。
+ *
+ * <p>为什么改成这样：V1.2 的界面是"卡片面板"——状态卡、任务卡、最近卡各占一块，
+ * 用户读到的是一堆结论，看不到事情是<b>怎么一步步发生</b>的。
+ * 而这个 App 的本质是一条执行流水：说了什么 → 调了哪个技能 → 成功还是失败。
+ * 按时间顺序摊开，比四块摘要卡更接近它实际在干的事。
+ *
+ * <p>和 V1.2 的区别只在"展示方式"，能力一点没减：无障碍/截图/悬浮窗/模型/输入法
+ * 五个状态仍在，只是从彩色徽章压成了顶栏下面一行等宽小字。
+ */
+public final class MainActivity extends Activity implements TaskBus.Listener {
+
+    private LinearLayout statusRow;
+    private LinearLayout transcript;
+    private ScrollView scroll;
+    private TextView tvSession;
+    private TextView tvRunning;
+    private TextView tvVersion;
+    private TextView btnRun;
+    private EditText etGoal;
+    private CheckBox cbAutoConfirm;
+
+    private CodexTranscript tx;
+    private boolean busy;
+    private RomInfo rom;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        UiKit.applyStatusBarPadding(findViewById(R.id.top_bar));
+
+        statusRow = findViewById(R.id.status_row);
+        transcript = findViewById(R.id.transcript);
+        scroll = findViewById(R.id.scroll);
+        tvSession = findViewById(R.id.tv_session);
+        tvRunning = findViewById(R.id.tv_running);
+        tvVersion = findViewById(R.id.tv_version);
+        btnRun = findViewById(R.id.btn_run);
+        etGoal = findViewById(R.id.et_goal);
+        cbAutoConfirm = findViewById(R.id.cb_auto_confirm);
+
+        tx = new CodexTranscript(scroll, transcript);
+
+        rom = RomInfo.detect(this);
+
+        btnRun.setOnClickListener(v -> startFromInput());
+        findViewById(R.id.btn_console).setOnClickListener(v -> openConsole());
+        findViewById(R.id.btn_skills).setOnClickListener(v -> open(SkillsActivity.class));
+        findViewById(R.id.btn_settings_top).setOnClickListener(v -> open(SettingsActivity.class));
+
+        findViewById(R.id.chip_observe).setOnClickListener(v -> runQuick("观察当前设备环境"));
+        findViewById(R.id.chip_screenshot).setOnClickListener(v -> runQuick("截图留证"));
+        findViewById(R.id.chip_smoke).setOnClickListener(v -> runQuick(
+                "运行工具冒烟，依次输入清空文本、断言、长按、返回、切换应用、回到桌面"));
+        findViewById(R.id.chip_skills).setOnClickListener(v -> open(SkillsActivity.class));
+        findViewById(R.id.chip_overlay).setOnClickListener(v -> toggleOverlay());
+
+        tvVersion.setText("v" + BuildConfig.VERSION_NAME + "  api" + rom.sdk
+                + "  act" + com.agentruntime.dsl.ActionSpec.ActionType.values().length
+                + "  sk" + (AgentApp.get() == null ? 0 : AgentApp.get().skillEngine().skillIds().size()));
+
+        if (savedInstanceState != null) {
+            String goal = savedInstanceState.getString("goal");
+            if (goal != null) etGoal.setText(goal);
+            cbAutoConfirm.setChecked(savedInstanceState.getBoolean("auto_confirm", false));
+            // 旋转会重建 Activity：把这次会话已经发生的事件重放一遍，
+            // 而不是留一块空白——流水本身就是状态，不该因为转屏丢掉。
+            replayHistory(savedInstanceState.getString("task_goal", ""));
+        } else {
+            showWelcome();
+        }
+
+        syncBusyFromBus();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString("goal", etGoal.getText().toString());
+        outState.putBoolean("auto_confirm", cbAutoConfirm.isChecked());
+        outState.putString("task_goal", lastTaskGoal);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        TaskBus.get().subscribe(this);
+    }
+
+    @Override
+    protected void onStop() {
+        TaskBus.get().unsubscribe(this);
+        super.onStop();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        syncBusyFromBus();
+        renderStatus();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        renderStatus();
+    }
+
+    // ------------------------------------------------------------ 状态条
+
+    /**
+     * 状态条：`键 值` 形式的等宽小字。
+     *
+     * <p>用短键（a11y / cap / ovl / mdl / ime）而不是中文全称，是为了在一屏宽度内塞得下
+     * 六项；值用颜色区分——绿=可用，黄=有但没开，红=缺失且必需，灰=可选未配置。
+     */
+    private void renderStatus() {
+        AgentApp app = AgentApp.get();
+        if (app == null || statusRow == null) return;
+        statusRow.removeAllViews();
+
+        boolean a11y = AgentAccessibilityService.isRunning();
+        addChip("a11y", a11y ? "on" : "off", a11y ? Kind.OK : Kind.BAD);
+
+        boolean cap = ScreenCapturer.supported();
+        addChip("cap", cap ? "on" : "no", cap ? Kind.OK : Kind.WARN);
+
+        boolean ovlPerm = UiKit.hasOverlayPermission(this);
+        boolean ovlOn = OverlayService.isRunning();
+        addChip("ovl", ovlOn ? "on" : (ovlPerm ? "idle" : "off"),
+                ovlOn ? Kind.OK : (ovlPerm ? Kind.WARN : Kind.DIM));
+
+        JSONObject probe = app.localModels().probe();
+        boolean localOk = probe.optBoolean("available", false);
+        String backend = probe.optString("backend", "");
+        addChip("mdl", localOk ? (backend.isEmpty() ? "on" : backend) : "off",
+                localOk ? Kind.OK : Kind.DIM);
+
+        boolean ime = AgentImeService.isSelected(this);
+        addChip("ime", ime ? "on" : "off", ime ? Kind.OK : Kind.DIM);
+
+        boolean cloud = app.modelRouter().cloud().isConfigured();
+        addChip("cloud", cloud ? "cfg" : "-", cloud ? Kind.OK : Kind.DIM);
+
+        int skills = app.skillEngine().skillIds().size();
+        addChip("skills", String.valueOf(skills), Kind.DIM);
+
+        // ROM 单独一项：多厂商适配的结论必须能在界面上看见，否则用户无从判断
+        // "我这台机器为什么和教程不一样"。
+        addChip("rom", rom.rom.split(" ")[0], rom.isDomesticRom() ? Kind.WARN : Kind.DIM);
+    }
+
+    private enum Kind { OK, WARN, BAD, DIM }
+
+    private void addChip(String key, String value, Kind kind) {
+        TextView tv = new TextView(this);
+        tv.setText(key + " " + value);
+        tv.setTextSize(11f);
+        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        int color;
+        switch (kind) {
+            case OK:
+                color = R.color.ok;
+                break;
+            case WARN:
+                color = R.color.warn;
+                break;
+            case BAD:
+                color = R.color.danger;
+                break;
+            default:
+                color = R.color.text_tertiary;
+                break;
+        }
+        tv.setTextColor(getColor(color));
+        tv.setPadding(0, 0, UiKit.dp(this, 14), 0);
+        statusRow.addView(tv);
+    }
+
+    // ------------------------------------------------------------ 空态
+
+    private void showWelcome() {
+        tx.addAssistant("agent runtime v" + BuildConfig.VERSION_NAME);
+        tx.addNote("env", rom.summary());
+
+        boolean a11y = AgentAccessibilityService.isRunning();
+        if (a11y) {
+            tx.addNote("ready", "无障碍已连接，可以直接下达任务");
+        } else {
+            tx.addWarn("无障碍未开启：先点右上角「设置」打开，否则无法操作其他应用");
+        }
+        tx.addSection("可以试试");
+        tx.addNote("", "\u203A 观察当前设备环境");
+        tx.addNote("", "\u203A 截图留证");
+        tx.addNote("", "\u203A 运行工具冒烟");
+    }
+
+    /** 旋转后重放本次会话。事件流本身就是唯一事实来源，界面只是它的投影。 */
+    private void replayHistory(String goal) {
+        List<TaskBus.Event> events = TaskBus.get().recent();
+        if ((goal == null || goal.isEmpty()) && events.isEmpty()) {
+            showWelcome();
+            return;
+        }
+        if (goal != null && !goal.isEmpty()) {
+            tx.addUser(goal);
+            tx.addSection("运行");
+        }
+        for (TaskBus.Event e : events) {
+            appendEvent(e, false);
+        }
+        if (TaskBus.get().running()) {
+            tvRunning.setText(TaskBus.get().progressText());
+        }
+    }
+
+    // ------------------------------------------------------------ 执行
+
+    private String lastTaskGoal = "";
+
+    private void startFromInput() {
+        String goal = etGoal.getText().toString().trim();
+        if (goal.isEmpty()) {
+            UiKit.toast(this, "先说一句要做什么");
+            return;
+        }
+        runGoal(goal);
+    }
+
+    private void runQuick(String goal) {
+        etGoal.setText(goal);
+        runGoal(goal);
+    }
+
+    private void runGoal(String goal) {
+        if (busy) {
+            UiKit.toast(this, "上一个任务还在执行");
+            return;
+        }
+        if (!AgentAccessibilityService.isRunning()) {
+            UiKit.toast(this, "无障碍服务未开启，先到设置里打开");
+            tx.addError("无障碍未开启，任务没有下发");
+            open(SettingsActivity.class);
+            return;
+        }
+
+        lastTaskGoal = goal;
+        busy = true;
+        setRunningUi(true);
+        tvSession.setText("  ·  " + shortId());
+
+        tx.clear();
+        tx.addUser(goal);
+        tx.addSection("运行");
+
+        TaskBus.get().clearLog();
+        TaskBus.get().info("ui", "已下发任务");
+
+        boolean auto = cbAutoConfirm.isChecked();
+        new Thread(() -> {
+            String status = "ERROR";
+            try {
+                com.agentruntime.runtime.AgentRuntime.TaskResult r =
+                        TaskRunner.runGoal(goal, auto, true);
+                status = r.status;
+            } catch (Throwable t) {
+                TaskBus.get().error("ui", "执行异常：" + t.getMessage());
+            } finally {
+                String finalStatus = status;
+                runOnUiThread(() -> {
+                    busy = false;
+                    setRunningUi(false);
+                    if (!"SUCCESS".equals(finalStatus)) {
+                        tx.addError("任务未成功：" + finalStatus + "（控制台可看完整步骤）");
+                    }
+                    renderStatus();
+                });
+            }
+        }, "ui-task").start();
+    }
+
+    private void setRunningUi(boolean running) {
+        btnRun.setEnabled(!running);
+        btnRun.setAlpha(running ? 0.4f : 1f);
+        btnRun.setText(running ? "运行中" : "运行");
+        etGoal.setEnabled(!running);
+        if (!running) {
+            tvRunning.setText("");
+        }
+    }
+
+    private void syncBusyFromBus() {
+        busy = TaskBus.get().running();
+        setRunningUi(busy);
+        if (busy) {
+            tvRunning.setText(TaskBus.get().progressText());
+        }
+    }
+
+    private static String shortId() {
+        String id = TaskBus.get().currentTaskId();
+        if (id == null || id.isEmpty()) return "session";
+        return id.length() <= 14 ? id : id.substring(0, 14);
+    }
+
+    // ------------------------------------------------------ TaskBus 回调
+
+    @Override
+    public void onEvent(TaskBus.Event event) {
+        if (event == null) return;
+        appendEvent(event, true);
+        if (TaskBus.get().running()) {
+            tvRunning.setText(TaskBus.get().progressText());
+        }
+    }
+
+    /**
+     * 把一条运行事件翻成流水条目。
+     *
+     * <p>解析 `step` 的两行消息（`[1/3] skill.id` 与 `     ✓ CODE  123ms`）确实是脏活，
+     * 但改 TaskBus 的协议影响面更大——它还有悬浮窗、控制台、通知三个消费者。
+     * 所以把解析收在这里，格式变了只改一处。
+     */
+    private void appendEvent(TaskBus.Event e, boolean animate) {
+        String tag = e.tag == null ? "" : e.tag;
+        String msg = e.message == null ? "" : e.message;
+
+        if ("step".equals(tag)) {
+            String t = msg.trim();
+            if (t.startsWith("[")) {
+                int close = t.indexOf(']');
+                String idx = close > 0 ? t.substring(1, close) : "?";
+                String skill = close > 0 ? t.substring(close + 1).trim() : t;
+                tx.addToolCall(skill, "step " + idx);
+            } else {
+                boolean ok = !t.startsWith("\u2717");
+                String rest = t.length() > 1 ? t.substring(1).trim() : t;
+                String code = rest;
+                long ms = 0;
+                String[] parts = rest.split("\\s{2,}");
+                if (parts.length > 1) {
+                    code = parts[0];
+                    String d = parts[parts.length - 1].replace("ms", "").trim();
+                    try {
+                        ms = Long.parseLong(d);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                tx.addToolResult(ok, code, ms);
+            }
+            return;
+        }
+
+        if ("plan".equals(tag)) {
+            tx.addNote("plan", msg);
+            return;
+        }
+
+        if ("task".equals(tag)) {
+            if (msg.startsWith("开始任务")) {
+                tx.addSection("任务");
+                tx.addNote("task", msg);
+            } else if (msg.startsWith("任务完成") || msg.startsWith("任务结束")) {
+                tx.addSummary(e.level == TaskBus.Level.OK, msg);
+            } else {
+                tx.addNote("task", msg);
+            }
+            return;
+        }
+
+        if (e.level == TaskBus.Level.ERROR) {
+            tx.addError(msg);
+        } else if (e.level == TaskBus.Level.WARN) {
+            tx.addWarn(msg);
+        } else {
+            tx.addNote(tag, msg);
+        }
+    }
+
+    // ------------------------------------------------------------ 导航
+
+    private void open(Class<?> cls) {
+        startActivity(new Intent(this, cls));
+    }
+
+    private void openConsole() {
+        startActivity(new Intent(this, ConsoleActivity.class));
+    }
+
+    private void toggleOverlay() {
+        if (OverlayService.isRunning()) {
+            startService(new Intent(this, OverlayService.class).setAction(OverlayService.ACTION_STOP));
+            tx.addNote("ovl", "悬浮球已关闭");
+        } else {
+            if (!UiKit.hasOverlayPermission(this)) {
+                tx.addWarn("需要先授予悬浮窗权限");
+                UiKit.openOverlayPermission(this, 1001);
+                return;
+            }
+            startService(new Intent(this, OverlayService.class).setAction(OverlayService.ACTION_START));
+            tx.addNote("ovl", "悬浮球已开启");
+        }
+        findViewById(R.id.chip_overlay).postDelayed(this::renderStatus, 400);
+    }
+}
