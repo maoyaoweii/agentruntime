@@ -134,7 +134,12 @@ public final class CloudPlannerAdapter {
         if (baseUrl.isEmpty() || apiKey.isEmpty()) throw new IOException("cloud planner not configured");
 
         String system = "你是移动设备任务规划器。只输出符合 Task DSL v1.0 的 JSON，不要输出其他文本。"
-                + "task_version 必须是 1.0；steps 只能使用可用 skill；高风险发送步骤必须带 confirmation: before_external_send。";
+                + "task_version 必须是 1.0；steps 只能使用下面列出的 skill，禁止自造 skill 名；"
+                + "allowed_apps 只能填 Android 包名（如 com.agenttestapp、org.fossify.notes），不能填类别名或虚构名；"
+                + "steps[].confirmation 只能取 before_external_send / before_payment / before_delete / always / never 之一（无需要时可省略该字段）；"
+                + "高风险发送步骤必须带 confirmation: before_external_send；"
+                + "preconditions 与 postconditions 只允许机器可判定的断言（形如 ui_contains:文本 / package_is:包名），"
+                + "不要写自然语言描述；无法确定时留空数组 []。";
         String user = "目标：" + goal + "\n可用 skill：" + skills + "\n设备权限：" + permissions
                 + "\n输出 JSON 字段：task_version, task_id, goal, allowed_apps, preconditions, steps[{skill,args,confirmation}], postconditions, limits{max_steps,max_replans,timeout_seconds}";
 
@@ -151,7 +156,9 @@ public final class CloudPlannerAdapter {
             conn = (HttpURLConnection) new URL(baseUrl).openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(8000);
-            conn.setReadTimeout(20000);
+            // 15s 对"边推理边输出"的模型（如 spark-x2.6）不够：实测一次规划往返约 20s，
+            // 超时过短会把成功响应判成 transport failure，表现为"配好了却规划不了"。
+            conn.setReadTimeout(60000);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + apiKey);
             conn.setDoOutput(true);
@@ -165,6 +172,7 @@ public final class CloudPlannerAdapter {
                 resp = readAll(in);
             }
             if (code >= 400) throw new IOException("cloud planner http " + code);
+            android.util.Log.i("CloudPlannerAdapter", "plan http " + code + " bytes=" + resp.length());
 
             JSONObject root = new JSONObject(resp);
             String content = root.getJSONArray("choices").getJSONObject(0)
@@ -174,6 +182,10 @@ public final class CloudPlannerAdapter {
             DslParser.ValidationResult vr = DslParser.validateTaskJson(taskJson);
             if (!vr.ok) throw new JSONException("cloud plan schema invalid: " + vr.error);
             return DslParser.taskFromJson(taskJson);
+        } catch (IOException e) {
+            android.util.Log.w("CloudPlannerAdapter", "plan transport failure: "
+                    + e.getClass().getName() + ": " + e.getMessage());
+            throw e;
         } finally {
             if (conn != null) conn.disconnect();
         }

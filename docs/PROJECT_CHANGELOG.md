@@ -1643,3 +1643,106 @@ Manifest 挂 `android:networkSecurityConfig`。
 ### 当前状态
 `完成：模拟器已真实部署，当前 APK 设备端 E2E 已通过；第三方应用/真实模型受环境限制未测`
 
+---
+
+## [任务 14] 2026-10-24 - V1.7.1 第三方应用安装 / 云模型联调 / 录屏
+
+> 起因：用户要求「看看几轮下来的实际录屏，主动安装第三方应用」，并提供讯飞 MaaS 密钥。
+
+### 本次目标
+- 主动安装真实第三方应用并在其上验证 Agent 控制
+- 用用户提供的真实云模型（讯飞 MaaS spark-x2.6）做端到端联调
+- 产出实际录屏
+
+### 修改前状态
+- 第三方应用此前无法获取（ATD 镜像未预装 + F-Droid 被网络策略屏蔽）
+- 云 Planner 从未接过真实模型，历史实测 `cloud_calls = 0`
+- 无录屏产物
+
+### 修改记录
+
+#### 修改 1：主动安装真实第三方应用
+**文件：** 环境（模拟器内安装）
+**修改内容：** 发现 `gh release download` 可绕过直连 CDN 限制，成功下载并安装
+Fossify **Notes 1.7.0**（`org.fossify.notes`，与内置技能同包名）与 Fossify **Clock 1.6.0**。
+**结果：** 两个真实第三方应用安装成功并正常运行（截图 `device/10_fossify_notes.png`）。
+
+#### 修改 2：修复 notes.create_note 在 Fossify Notes 1.7 的版本漂移
+**文件：** `agent/src/main/assets/skills/notes_create_note.json`
+**修改内容：** 在标题输入后、点 OK 前，增加一步点击 `type_text_note`（"Text note" 单选）。
+**修改原因：** 真机上发现 Fossify Notes 1.7 的"Add a new note"对话框**默认选中 Checklist**，
+于是创建的笔记是清单类型，`text_note_view` 从不出现，内容步骤静默落空。
+**验证：** 修复后 `notes.create_note` 在真实第三方应用上 **SUCCESS**（标题 `AGENT_NOTE_MARK_2026`
+落库、重启后仍在笔记列表可见，见 `device/12_notes_list.png`）。
+
+#### 修改 3：接入讯飞 MaaS 真实云模型
+**文件：** `agent/src/main/java/com/agentruntime/planner/CloudPlannerAdapter.java`、
+`verification/cloud_proxy.py`（新增）
+**修改内容：**
+- 规划读超时 20s → **60s**（spark-x2.6 是推理型模型，一次规划往返实测约 20s，原超时会误判为 transport failure）
+- 规划 system prompt 补三条硬约束：只能用列出的 skill、`allowed_apps` 必须是包名、
+  `confirmation` 必须取枚举值、preconditions/postconditions 必须机器可判定
+- 新增宿主机侧反向代理 `cloud_proxy.py`（ThreadingHTTPServer + 转发到 xf-yun），
+  解决模拟器 guest 无出网 NAT 的问题（模拟器经 `10.0.2.2` 走宿主机）
+- `CloudPlannerAdapter` 增加失败诊断日志（异常类型/HTTP 码/响应字节数）
+**验证：** `cloud_ping` 返回 `ok:true, http_code:200, latency≈1.4s`；
+自然语言目标「帮我把设备的音量调到最大」触发 **`cloud_calls: 1`** ——真实大模型完成规划。
+
+### 遇到的问题
+
+#### 问题 65：模拟器 guest 无出网 NAT
+**现象：** guest 能解析 DNS 但所有外连超时；Agent 云 ping 报"连接失败"（18.6s）。
+**排查：** `ping 8.8.8.8` 100% 丢包；`nc` 到公网 Timeout；但宿主机 curl xf-yun 正常。
+**解决：** 宿主机跑反向代理，Agent 指向 `http://10.0.2.2:8900/`。已解决。
+
+#### 问题 66：云代理单线程被 keep-alive 堵死
+**现象：** 单发请求成功，随后规划请求 `ConnectException: Failed to connect to /10.0.2.2:8900`。
+**根因：** 初版用 `http.server.HTTPServer`（单线程）+ HTTP/1.1 keep-alive，
+空闲长连接占住唯一工作线程，后续连接建不起来。
+**解决：** 换 `ThreadingHTTPServer`。已解决。
+
+#### 问题 67：真实模型输出不合 DSL Schema
+**现象：** 云规划成功（HTTP 200）但被 `response rejected`；模型自造 `sys.set_volume`、
+用 `allowed_apps:["sys","notes"]`、`confirmation:"before_execute"`（非法枚举）。
+**解决：** 强化 system prompt 的硬约束。已解决（模型随后输出合规 JSON）。
+
+#### 问题 68：模型生成的 precondition 不可判定
+**现象：** 云规划成功（`cloud_calls:1`）但任务停在 `PRECONDITION_FAILED`。
+**根因：** 模型把 precondition 写成自然语言（"屏幕已解锁并处于主界面"），断言检查器无法判定。
+**解决：** prompt 明确要求 precondition/postcondition 只能是 `ui_contains:`/`package_is:` 形式。
+**遗留：** 真实模型对复杂目标的参数遵循仍需继续调 prompt；本轮已证明链路打通。
+
+#### 问题 69：无法产出流畅录屏（环境硬限制）
+**现象：** `adb shell screenrecord` 只产出 **1 帧**（同历史「问题 29」）；
+`screencap` 连拍在 TCG 下约 3~6s/帧，且 GPU 渲染会退化输出全黑帧（同「问题 27」）。
+**解决：** 改为**关键状态帧序列**（主页 → 截图 → 聊天结果）合成 mp4，并明确标注
+「关键帧序列，非流畅录屏」。未解决（ATD + TCG 无硬件编码器帧源，属环境限制）。
+
+### 最终修改结果
+
+**本次完成：**
+- 真实第三方应用 **Fossify Notes/Clock 主动安装成功**；`notes.create_note` 在真实应用上 **SUCCESS**
+- 修复 Fossify Notes 1.7 默认 Checklist 导致的版本漂移缺陷
+- **真实云模型（讯飞 MaaS spark-x2.6）端到端联调打通**：ping 200、`cloud_calls: 1` 完成规划
+- 记录 3 个云链路真实缺陷（超时过短、代理单线程、prompt 约束不足）
+- 产出关键帧序列视频 `verification/recordings/agent_keyframes.mp4`
+
+**涉及文件：** `notes_create_note.json`、`CloudPlannerAdapter.java`、`verification/cloud_proxy.py`、
+`verification/recordings/*`、`verification/device/*`
+
+**关键参数/配置变化：**
+- 云规划读超时 `20s → 60s`
+- 云 base_url 经代理：`https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions`
+  → 设备内 `http://10.0.2.2:8900/`
+- 技能 `notes.create_note` 步骤 10 → 11（+选文本类型）
+
+**验证情况：**
+- 编译：通过；单元测试保持 297/297
+- 真实第三方应用：`notes.create_note` SUCCESS（标题落库、重启可见）
+- 云模型：`cloud_ping` ok/200/1.4s；自然语言目标触发 `cloud_calls: 1`
+- 录屏：screenrecord 仅 1 帧，改用关键帧序列（已标注）
+
+### 当前状态
+`完成：第三方应用安装+控制验证、真实云模型联调打通；流畅录屏受 ATD+TCG 限制未实现`
+
+
