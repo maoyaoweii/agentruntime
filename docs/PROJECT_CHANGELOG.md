@@ -4,12 +4,9 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 18] 2026-10-25 - 权限逐个申请 + 共享存储读写 + 换用完整 AOSP 真实系统镜像**。
-> 新增「权限申请」一键入口：先弹说明页，再把未授予的运行时权限交给系统逐个弹原生对话框，
-> 用户本人点「允许」；被拒后明确回报差哪几项。存储读写扩到共享目录并分版本如实判断
-> （API 30+ 返回 `SCOPED_STORAGE` 而非静默失败）；模拟环境从 ATD 测试镜像换成
-> **完整 AOSP Android 11**（Launcher3/Settings/Camera/DocumentsUI 齐全），在其上完成端到端验证。
-> 上一轮：[任务 17] 任务执行改为可拖动悬浮窗，并展示 AI 思考与动作。
+> 最新一轮见文末 **[任务 19] 2026-10-25 - 推送到 GitHub 仓库 `xianshengl487-star/agentruntime`（private）**。
+> 本地提交 `5b04f07` 已推送为远端 `main`，本地/远端 SHA 一致，分支跟踪 `origin/main` 已建立。
+> 上一轮：[任务 18] 权限逐个申请 + 共享存储读写 + 换用完整 AOSP 真实系统镜像。
 > 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/permission_flow_real_aosp_20261025.mp4`、
 > `verification/recordings/overlay_task_panel_20261025.mp4`、
 > `verification/recordings/cloud_real_plan_realtime_20261025.mp4`、
@@ -2293,3 +2290,94 @@ Fossify **Notes 1.7.0**（`org.fossify.notes`，与内置技能同包名）与 F
 
 ### 当前状态
 `完成：权限逐个申请 / 共享存储读写 / 完整 AOSP 真实系统验证均已通过；剩余 GitHub 推送（待用户仓库名）`
+
+---
+
+## [任务 19] 2026-10-25 - 推送到 GitHub 仓库
+
+### 本次目标
+把已完成的 V1.8 交付物（源码 / APK / 验证证据 / 工程日志）推送到用户的 GitHub，
+并建立可持续的本地-远端跟踪关系，为后续迭代留出推送通道。
+
+### 修改前状态
+- 本地仓库有 74 个文件未提交（V1.7.1 之后的所有改动）
+- `git remote -v` 为空，从未配置远端
+- `gh` 已登录 `xianshengl487-star`（GitHub App 集成令牌）
+- 目标仓库不存在
+
+### 遇到的问题
+
+#### 问题 79：令牌无建仓权限
+**现象**：`gh repo create` 与 GitHub 插件 `github_create_repository` 均返回
+`403 Resource not accessible by integration`。
+**排查**：`gh api /repos/.../permissions` 显示对已有仓库 `admin/push/pull` 均为 true，
+说明令牌有效但缺少 `createRepository` 这一项；`x-oauth-scopes` 为空，判断为
+GitHub App 集成令牌（按仓库安装范围授权），而非带 `repo` scope 的个人 PAT。
+**解决**：由用户在 GitHub 页面创建空私有仓库 `agentruntime`，本地只负责推送。
+**结果**：已解决。
+
+#### 问题 80：`git push` 无凭据
+**现象**：`git ls-remote origin` 报 `could not read Username for 'https://github.com'`。
+**排查**：沙箱无交互式终端，也没有 `~/.git-credentials`。
+**解决**：改用一次性 URL 凭据 `https://x-access-token:${TOKEN}@github.com/...`，
+配合 `-c credential.helper=` 避免把令牌写进任何 git 配置文件。
+**结果**：已解决；`ls-remote` 只读验证与 `push` 均成功。
+
+### 修改记录
+
+#### 修改 1：提交 V1.8
+`git add agent/src docs/PROJECT_CHANGELOG.md docs/shots/v16 verification apk/agent-debug.apk`
+→ 提交 `5b04f07`（74 个文件）。同时把 `apk/agent-debug.apk` 刷新为最新构建，
+避免交付 APK 与源码不一致。
+
+#### 修改 2：README 升级到 V1.8
+- 标题 `V1.7` → `V1.8`，顶部交付状态块改为 V1.8 事实（完整 AOSP 镜像、权限逐个申请、
+  文件读写实测耗时、悬浮窗）；
+- "七轮改造" → 增加 V1.8 一句；
+- 镜像表格补 `system-images;android-30;default;x86_64` 一行。
+
+#### 修改 3：建立远端与跟踪
+`git remote add origin https://github.com/xianshengl487-star/agentruntime.git`，
+推送 `master:main`，并设置 `branch.master.{remote,merge}` → `origin/main`。
+
+### 最终修改结果
+
+**本次完成：**
+- V1.8 全部改动提交为 `5b04f07`
+- 推送至 `https://github.com/xianshengl487-star/agentruntime`（private，默认分支 `main`）
+- 本地 `HEAD` 与远端 `main` SHA 一致：`5b04f07dbcf2`
+- 分支跟踪 `origin/main` 已建立
+
+**涉及文件：**
+- `README.md`（V1.7 → V1.8）
+- `docs/PROJECT_CHANGELOG.md`（本记录）
+- `apk/agent-debug.apk`（刷新为最新构建）
+
+**关键参数/配置变化：**
+- `origin`: 无 → `https://github.com/xianshengl487-star/agentruntime.git`
+- 远端默认分支：`main`（本地分支名为 `master`，通过 `branch.master.merge` 跟踪）
+- 仓库可见性：**private**
+
+### 验证情况
+
+- 编译：本轮未重新编译（无源码改动，仅 README/日志/APK 同步）
+- 单元测试：本轮未重跑（同上）
+- 推送：**成功**，`master -> main`（`* [new branch]`）
+- 远端核对（`gh api` 实测）：
+  - `commits/main` → `5b04f07dbcf2` + V1.8 提交信息
+  - 根目录 13 项：`.gitignore` `README.md` `agent` `agenttestapp` `apk` `build.gradle`
+    `build.sh` `docs` `gradle.properties` `local.properties.example` `settings.gradle`
+    `test-fixtures` `tools` `verification`
+  - 关键产物体积与本地一致：`apk/agent-debug.apk` 36,965,650 B、
+    `verification/recordings/permission_flow_real_aosp_20261025.mp4` 185,751 B、
+    `docs/PROJECT_CHANGELOG.md` 149,026 B、`UiKit.java` 12,112 B
+- 本地/远端一致性：`local HEAD == origin/main == 5b04f07dbcf2`
+
+**未验证 / 限制：**
+- 仓库可见性为 private，外部链接需登录后访问
+- 推送使用 GitHub App 集成令牌的临时 URL 凭据，未写入任何配置文件；
+  后续推送仍需同样的令牌方式（或用户配置个人 PAT / SSH key）
+- `apk/agent-release-unsigned.apk` 为旧构建，未随 V1.8 源码重新签名，仍是未签名包
+
+### 当前状态
+`完成：代码 / APK / 验证证据 / 工程日志已全部推送至 GitHub，本地与远端一致`

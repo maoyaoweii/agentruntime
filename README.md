@@ -1,5 +1,7 @@
 # Android AI Agent Runtime V1.8
 
+> **仓库：** https://github.com/xianshengl487-star/agentruntime （private，默认分支 `main`）
+
 > **当前交付状态（2026-10-25，V1.8）：** 在**完整 AOSP Android 11**（`system-images;android-30;default;x86_64`，
 > 非 ATD 精简镜像）上完成端到端验证：Launcher3 / Settings / SystemUI / Camera / DocumentsUI 齐全。
 >
