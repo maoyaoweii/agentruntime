@@ -2856,3 +2856,9 @@ C06 允许{A,B}却停在设置   TASK_TARGET_MISMATCH 31.8s  target_check ok=Fal
 
 ### 当前状态
 `完成：三条遗留问题全部复验通过 + 按文本点击能力落地，JVM 318/318、设备端 C01–C06 全绿`
+
+### 收尾记录（2026-10-28）
+- 顶部「当前工程状态」已同步到本任务（原指向 [任务 21]）。
+- 提交：`76ed77a V1.9: 目标核验 + 云端配置同请求落盘 + tap_text 按文本点击原语`（47 files, +1048/−48），已推送 `origin/main`（`fb3f9dd..76ed77a`）。
+- 关闭实例后（模拟器 `adb emu kill`、宿主 `cloud_proxy.py` pid 12610 终止，`ss` 复核 8900/5554/5555 无监听、`free` 空闲 ~4.6GB）用 `--rerun-tasks` **强制重跑** JVM 单测：`tests=318 failures=0 errors=0 skipped=0`，BUILD SUCCESSFUL。
+- 本轮无代码改动遗留；下次需要实机复验时按 `verification/runtime_hardening_ops2.sh` 重新起模拟器即可（需 `MAAS_API_KEY`）。
