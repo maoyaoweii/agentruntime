@@ -353,6 +353,21 @@ public final class DslParser {
                 }
                 break;
             }
+            case TAP_TEXT: {
+                if (isEmpty(params.optString("text", null))) {
+                    throw new JSONException("tap_text requires params.text");
+                }
+                int maxScrolls = params.optInt("max_scrolls", 2);
+                if (maxScrolls < 0 || maxScrolls > 5) {
+                    throw new JSONException("tap_text params.max_scrolls out of range 0..5");
+                }
+                String dir = params.optString("direction", "down");
+                if (!dir.equals("down") && !dir.equals("up")
+                        && !dir.equals("left") && !dir.equals("right")) {
+                    throw new JSONException("tap_text params.direction must be down/up/left/right");
+                }
+                break;
+            }
             default:
                 break;
         }

@@ -80,6 +80,34 @@ public class SkillLoadingRegressionTest {
     }
 
     @Test
+    public void tapTextSkillResolvesToSingleGestureAction() throws Exception {
+        List<ActionSpec> actions = engine().resolve("sys.tap_text", new JSONObject().put("text", "Settings"));
+        assertEquals(1, actions.size());
+        assertEquals(ActionSpec.ActionType.TAP_TEXT, actions.get(0).type);
+        assertEquals("Settings", actions.get(0).params.getString("text"));
+        assertTrue(actions.get(0).params.optBoolean("scroll", false));
+    }
+
+    @Test
+    public void tapTextRejectsEmptyTextAndOutOfRangeScroll() {
+        try {
+            com.agentruntime.dsl.DslParser.parseAction(new JSONObject()
+                    .put("action", "tap_text").put("params", new JSONObject()));
+            fail("tap_text without params.text must be rejected");
+        } catch (Exception expected) {
+            assertTrue(expected.getMessage().contains("tap_text requires"));
+        }
+        try {
+            com.agentruntime.dsl.DslParser.parseAction(new JSONObject()
+                    .put("action", "tap_text")
+                    .put("params", new JSONObject().put("text", "Settings").put("max_scrolls", 9)));
+            fail("tap_text max_scrolls out of range must be rejected");
+        } catch (Exception expected) {
+            assertTrue(expected.getMessage().contains("max_scrolls"));
+        }
+    }
+
+    @Test
     public void manifestTemplateIsNotPrevalidatedAsFinalUrl() throws Exception {
         SkillManifest m = SkillManifest.fromJson(new JSONObject()
                 .put("skill_id", "test.template")

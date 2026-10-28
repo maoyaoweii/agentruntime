@@ -34,6 +34,7 @@ public final class AgentAccessibilityService extends AccessibilityService {
 
     private long nodeIdSeq = 0;
     private long lastSnapshotTs = 0;
+    private int nullRootStreak = 0;
 
     public static AgentAccessibilityService getInstance() {
         return instance;
@@ -126,7 +127,7 @@ public final class AgentAccessibilityService extends AccessibilityService {
         StateEngine engine = engine();
         if (engine == null) return null;
         lastSnapshotTs = System.currentTimeMillis();
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = activeRoot();
         if (root == null) {
             return engine.rebuildSnapshot(null, null, null, null, source);
         }
@@ -140,6 +141,62 @@ public final class AgentAccessibilityService extends AccessibilityService {
             focusId = match != null ? match.nodeId : null;
         }
         return engine.rebuildSnapshot(pkg, pkg, tree, focusId, source);
+    }
+
+    /**
+     * 取当前活动窗口的根节点，取不到时用窗口列表兜底一次。
+     *
+     * <p>实测问题（C05）：宿主进程被 force-stop 后，无障碍连接被系统标记为仍 Bound，
+     * 但 {@link #getRootInActiveWindow()} 持续返回 null，任务里所有 wait_for/按文本定位
+     * 都变成 WAIT_TIMEOUT / NODE_NOT_FOUND，且没有任何线索。这里兜底读一次
+     * {@link #getWindows()}（最上层应用窗口），并把连续失败次数打到日志，
+     * 让"服务半死"能被看出来而不是伪装成找不到界面。
+     */
+    private AccessibilityNodeInfo activeRoot() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root != null) {
+            nullRootStreak = 0;
+            return root;
+        }
+        try {
+            java.util.List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
+            if (windows != null) {
+                AccessibilityNodeInfo fallback = null;
+                for (android.view.accessibility.AccessibilityWindowInfo w : windows) {
+                    if (w.getType() != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) {
+                        continue;
+                    }
+                    AccessibilityNodeInfo r = w.getRoot();
+                    if (r != null) fallback = r; // 后出现的窗口更靠上
+                }
+                if (fallback != null) {
+                    nullRootStreak = 0;
+                    return fallback;
+                }
+            }
+        } catch (Throwable ignored) {
+            // getWindows 在部分定制 ROM 上可能抛异常，兜底失败按 null 处理
+        }
+        nullRootStreak++;
+        if (nullRootStreak == 1 || nullRootStreak % 20 == 0) {
+            android.util.Log.w("A11ySnap", "root unavailable streak=" + nullRootStreak
+                    + " windows=" + windowSummary());
+        }
+        return null;
+    }
+
+    private String windowSummary() {
+        try {
+            java.util.List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
+            if (windows == null || windows.isEmpty()) return "none";
+            StringBuilder sb = new StringBuilder();
+            for (android.view.accessibility.AccessibilityWindowInfo w : windows) {
+                sb.append(w.getType()).append(w.isActive() ? "*" : "").append(' ');
+            }
+            return sb.toString().trim();
+        } catch (Throwable t) {
+            return "err:" + t.getClass().getSimpleName();
+        }
     }
 
     /** 语义定位后在存活树上执行点击。 */
@@ -217,28 +274,55 @@ public final class AgentAccessibilityService extends AccessibilityService {
     private AccessibilityNodeInfo findLiveNode(UiNode target) {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null || target == null) return null;
-        if (target.resourceId != null) {
-            AccessibilityNodeInfo byId = findLiveBy(root, n ->
-                    target.resourceId.equals(n.getViewIdResourceName())
-                            && (target.className == null
-                            || target.className.equals(safe(n.getClassName()))));
-            if (byId != null) return byId;
-        }
+        // 先按完整身份（类名+resourceId+文本+描述+可点+可见）匹配，再按 resourceId 兜底。
+        // 不能只用 resourceId：抽屉/列表的行常常共用同一个 id（实测 NewPipe 抽屉全是
+        // design_menu_item_text），按 id 找会命中第一行。
+        // 身份也可能重复：行容器本身无文本（文本在子节点），同构行身份一致，
+        // 所以多命中时用坐标挑最接近快照位置的那个，避免"点 Settings 点成 History"。
         String identity = target.identityKey();
-        return findLiveBy(root, n -> identity.equals(identityOf(n)));
-    }
-
-    private AccessibilityNodeInfo findLiveBy(AccessibilityNodeInfo node,
-                                             java.util.function.Predicate<AccessibilityNodeInfo> pred) {
-        if (node == null) return null;
-        if (pred.test(node)) return node;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            AccessibilityNodeInfo child = node.getChild(i);
-            if (child == null) continue;
-            AccessibilityNodeInfo hit = findLiveBy(child, pred);
-            if (hit != null) return hit;
+        java.util.List<AccessibilityNodeInfo> hits = new java.util.ArrayList<>();
+        collectLive(root, n -> identity.equals(identityOf(n)), hits);
+        if (!hits.isEmpty()) return nearestByBounds(hits, target);
+        if (target.resourceId != null) {
+            java.util.List<AccessibilityNodeInfo> byId = new java.util.ArrayList<>();
+            collectLive(root, n -> target.resourceId.equals(n.getViewIdResourceName())
+                    && (target.className == null
+                    || target.className.equals(safe(n.getClassName()))), byId);
+            if (!byId.isEmpty()) return nearestByBounds(byId, target);
         }
         return null;
+    }
+
+    /** 同一身份匹配到多个节点时，选屏幕位置最接近目标快照中心点的那个。 */
+    private AccessibilityNodeInfo nearestByBounds(java.util.List<AccessibilityNodeInfo> hits, UiNode target) {
+        if (hits.size() == 1) return hits.get(0);
+        int tx = (target.left + target.right) / 2;
+        int ty = (target.top + target.bottom) / 2;
+        AccessibilityNodeInfo best = null;
+        long bestDist = Long.MAX_VALUE;
+        Rect b = new Rect();
+        for (AccessibilityNodeInfo n : hits) {
+            b.setEmpty();
+            n.getBoundsInScreen(b);
+            long dx = (long) ((b.left + b.right) / 2) - tx;
+            long dy = (long) ((b.top + b.bottom) / 2) - ty;
+            long d = dx * dx + dy * dy;
+            if (d < bestDist) {
+                bestDist = d;
+                best = n;
+            }
+        }
+        return best != null ? best : hits.get(0);
+    }
+
+    private void collectLive(AccessibilityNodeInfo node,
+                             java.util.function.Predicate<AccessibilityNodeInfo> pred,
+                             java.util.List<AccessibilityNodeInfo> out) {
+        if (node == null) return;
+        if (pred.test(node)) out.add(node);
+        for (int i = 0; i < node.getChildCount(); i++) {
+            collectLive(node.getChild(i), pred, out);
+        }
     }
 
     private UiNode findByFingerprint(UiNode node, String fp) {

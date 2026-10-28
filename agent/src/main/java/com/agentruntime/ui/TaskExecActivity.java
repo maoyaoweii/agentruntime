@@ -84,12 +84,17 @@ public final class TaskExecActivity extends Activity {
             AgentRuntime.TaskResult result;
             try {
                 boolean cloudTouched = cloudBaseUrl != null || cloudApiKey != null || cloudModel != null || cloudPing || cloudInfo;
+                // 配置必须无条件落盘。原先只在「无目标的自检请求」里 configure，
+                // 带 goal 的真实任务拿不到 key，直接 no planner available（问题 85）。
+                if (cloudTouched) {
+                    if (cloudBaseUrl != null || cloudApiKey != null || cloudModel != null) {
+                        AgentApp.get().modelRouter().cloud()
+                                .configure(cloudBaseUrl, cloudApiKey, cloudModel);
+                    }
+                }
                 if (cloudTouched && (goalFinal == null || goalFinal.isEmpty())
                         && (taskJsonFinal == null || taskJsonFinal.isEmpty())) {
                     com.agentruntime.planner.CloudPlannerAdapter cloud = AgentApp.get().modelRouter().cloud();
-                    if (cloudBaseUrl != null || cloudApiKey != null || cloudModel != null) {
-                        cloud.configure(cloudBaseUrl, cloudApiKey, cloudModel);
-                    }
                     JSONObject out = cloudPing ? cloud.ping() : cloud.configInfo();
                     out.put("task_id", "cloud_api");
                     out.put("status", out.optBoolean("ok", out.optBoolean("configured", false)) ? "SUCCESS" : "INFO");

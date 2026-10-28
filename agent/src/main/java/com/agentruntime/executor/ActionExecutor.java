@@ -253,6 +253,10 @@ public final class ActionExecutor {
                 result = intentBridge.closeSystemDialogs();
                 break;
             }
+            case TAP_TEXT: {
+                result = tapText(spec, cancelRequested, taskDeadlineMs, epoch, start);
+                break;
+            }
             case TAP_XY: {
                 result = doTapXy(spec, epoch, start);
                 break;
@@ -639,6 +643,260 @@ public final class ActionExecutor {
         JSONObject dump;
     }
 
+    /**
+     * 按可见文本点击：当前界面找不到就滚动再找。
+     *
+     * <p>真实应用的入口常藏在抽屉或首屏之外（实测 NewPipe 的「设置」在导航抽屉里，
+     * 用 click_node 定位只会 NODE_NOT_FOUND，用 wait_for 等只会 WAIT_TIMEOUT）。
+     * 「找 + 滚动 + 点」三件事必须是一个原子动作，否则规划器要为每种应用拼手势。
+     *
+     * <p>匹配顺序：精确文本可点击 → 包含文本可点击 → 精确文本 → 包含文本；
+     * 命中的若是不可点击的文本节点，改点"包含该节点且面积最小的可点击祖先"。
+     */
+    private ExecResult tapText(ActionSpec spec, AtomicBoolean cancelRequested,
+                               long taskDeadlineMs, long epoch, long start) {
+        String query = spec.param("text");
+        if (query == null || query.trim().isEmpty()) {
+            return ExecResult.fail("NO_TEXT", "params.text missing", epoch, elapsed(start));
+        }
+        boolean allowScroll = !"false".equalsIgnoreCase(spec.params.optString("scroll", "true"));
+        int maxScrolls = Math.max(0, Math.min(5, spec.params.optInt("max_scrolls", 2)));
+        String direction = spec.params.optString("direction", "down");
+        long settleMs = Math.max(300, Math.min(3000, spec.params.optLong("settle_ms", 800)));
+
+        String dismissed = null;
+        for (int attempt = 0; attempt <= maxScrolls; attempt++) {
+            if (cancelRequested != null && cancelRequested.get()) {
+                return ExecResult.cancelled("USER_CANCEL", "cancel requested", epoch);
+            }
+            if (System.currentTimeMillis() >= taskDeadlineMs) {
+                return ExecResult.timeout("TASK_TIMEOUT", "task deadline reached while tapping text",
+                        epoch, elapsed(start));
+            }
+            WorldState state = snapshotWithGrace("tap_text", 10000);
+            if (state == null || state.root == null) {
+                // 读不到任何窗口树：这是无障碍连接的问题，不是"文字不存在"。
+                // 报 NODE_NOT_FOUND 会让人以为要换文案，实际要重新绑定无障碍服务。
+                logTap("root-unavailable");
+                return ExecResult.fail("A11Y_ROOT_UNAVAILABLE",
+                        "accessibility root unavailable (service bound but no window tree);"
+                                + " rebind accessibility service", epoch, elapsed(start));
+            }
+            UiNode node = pickByText(state, query);
+            logTap("attempt=" + attempt + " query=" + query + " root=" + rootBounds(state)
+                    + " nodes=" + (state == null || state.root == null ? 0 : state.root.flat().size())
+                    + " hit=" + (node == null ? "-" : node.nodeId));
+            if (node == null && attempt == 0) logTap("tree=" + describeTree(state, 24));
+            if (node != null) {
+                ExecResult r = accessibilityBridge.performClick(node, spec.timeoutMs);
+                if (r.ok()) {
+                    return ExecResult.ok("TAP_TEXT_OK",
+                            query + " -> " + node.nodeId + " (scrolls=" + attempt
+                                    + (dismissed == null ? "" : ", dismissed=" + dismissed) + ")",
+                            epoch, elapsed(start));
+                }
+                return r;
+            }
+            // 目标被模态弹窗挡住（首启公告/更新提示）时，先关掉它再重新找；只看一次，避免反复点按钮。
+            if (dismissed == null) {
+                UiNode close = dismissBlockingDialog(state);
+                logTap("dismiss-candidate=" + (close == null ? "-"
+                        : (close.text + "/" + close.contentDescription + "/" + close.nodeId)));
+                if (close != null) {
+                    dismissed = close.text != null && !close.text.trim().isEmpty()
+                            ? close.text.trim() : close.contentDescription;
+                    boolean clicked = accessibilityBridge.performClick(close, spec.timeoutMs).ok();
+                    logTap("dismiss-click=" + dismissed + " ok=" + clicked);
+                    if (clicked) {
+                        if (!sleepQuietly(settleMs)) {
+                            return ExecResult.cancelled("INTERRUPTED", "tap_text interrupted", epoch);
+                        }
+                        continue;
+                    }
+                }
+            }
+            if (!allowScroll || attempt == maxScrolls) break;
+            // 多个可滚动容器时优先滚"最上层"的那个（抽屉/弹层是后加入树的），
+            // 否则容易选中背景里的 ViewPager 并得到 SCROLL_FAILED（NewPipe 实测）。
+            List<UiNode> scrollables = bottomUpScrollables(state);
+            if (scrollables.isEmpty()) break;
+            UiNode target = scrollables.get(Math.min(attempt, scrollables.size() - 1));
+            ExecResult scroll = accessibilityBridge.performScroll(target, direction, spec.timeoutMs);
+            if (!scroll.ok()) break;
+            if (!sleepQuietly(settleMs)) {
+                return ExecResult.cancelled("INTERRUPTED", "tap_text interrupted", epoch);
+            }
+        }
+        return ExecResult.fail("NODE_NOT_FOUND",
+                "text not found after " + maxScrolls + " scroll(s): " + query
+                        + (dismissed == null ? "" : " (dismissed=" + dismissed + ")"),
+                epoch, elapsed(start));
+    }
+
+    private boolean sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+            return true;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /** 挡路弹窗里允许自动点击的按钮文案：只认无副作用的确认/关闭，绝不包含授权类。 */
+    private static final List<String> SAFE_DIALOG_LABELS = java.util.Arrays.asList(
+            "ok", "okay", "got it", "continue", "close", "dismiss", "no thanks",
+            "确定", "知道了", "明白了", "关闭", "继续");
+
+    static boolean isSafeDialogLabel(String label) {
+        if (label == null) return false;
+        String l = label.trim().toLowerCase(java.util.Locale.ROOT);
+        return !l.isEmpty() && SAFE_DIALOG_LABELS.contains(l);
+    }
+
+    /**
+     * 当前窗口是不是一个平台对话框（首启公告、更新提示这类模态窗）。
+     *
+     * <p>判据是<b>结构标记</b>而不是"窗口比屏幕小"：实测 AVD 上应用可见区域本身就只有
+     * 720x1012（去掉状态栏/导航栏），任何普通前台界面都会被"非全屏"误判成对话框。
+     * 平台 AlertDialog 的 android:id/parentPanel、button1 等 id 应用自己是不会用的。
+     */
+    static boolean isDialogWindow(UiNode root) {
+        if (root == null) return false;
+        for (UiNode n : root.flat()) {
+            String cls = n.className == null ? "" : n.className.toLowerCase(java.util.Locale.ROOT);
+            if (cls.contains("dialog")) return true;
+            String rid = n.resourceId;
+            if (rid == null) continue;
+            if (rid.endsWith(":id/parentPanel") || rid.endsWith(":id/buttonPanel")
+                    || rid.endsWith(":id/alertTitle") || rid.endsWith(":id/button1")
+                    || rid.endsWith(":id/button2")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 目标文本找不到、且当前窗口是挡路对话框时，返回可安全点击的关闭按钮；没有则 null。
+     *
+     * <p>只点 OK/Got it/Continue/Close 这类确认，授权类按钮（Allow/允许）必须由人点，
+     * 因此这里用白名单精确匹配，而不是"随便点一个按钮"。
+     */
+    static UiNode dismissBlockingDialog(WorldState state) {
+        if (state == null || state.root == null) return null;
+        if (!isDialogWindow(state.root)) return null;
+        for (UiNode n : state.root.flat()) {
+            if (!n.visible || !n.clickable || !n.enabled) continue;
+            if (isSafeDialogLabel(n.text) || isSafeDialogLabel(n.contentDescription)) return n;
+        }
+        return null;
+    }
+
+    /** 可滚动节点，按"最上层优先"返回（树序靠后的是后加入的抽屉/弹层）。 */
+    static List<UiNode> bottomUpScrollables(WorldState state) {
+        List<UiNode> out = new ArrayList<>();
+        if (state == null || state.root == null) return out;
+        for (UiNode n : state.root.flat()) {
+            if (n.scrollable && n.visible) out.add(n);
+        }
+        java.util.Collections.reverse(out);
+        return out;
+    }
+
+    /** 设备端排查用：tap_text 每一步快照/命中/关闭弹窗都留一条日志（logcat -s TapText）。 */
+    private static void logTap(String msg) {
+        try {
+            android.util.Log.i("TapText", msg);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String rootBounds(WorldState state) {
+        if (state == null || state.root == null) return "null";
+        return "[" + state.root.left + "," + state.root.top + ","
+                + state.root.right + "," + state.root.bottom + "]";
+    }
+
+    /** 未命中时把当前树压成一行日志（上限 max 个节点），用于设备端定位"为什么找不到"。 */
+    private static String describeTree(WorldState state, int max) {
+        if (state == null || state.root == null) return "null";
+        StringBuilder sb = new StringBuilder();
+        int i = 0;
+        for (UiNode n : state.root.flat()) {
+            if (i++ >= max) {
+                sb.append(" ...");
+                break;
+            }
+            sb.append('{').append(n.nodeId).append(' ').append(shortClass(n.className));
+            if (n.text != null && !n.text.isEmpty()) sb.append(" t=").append(trim(n.text, 24));
+            if (n.contentDescription != null && !n.contentDescription.isEmpty())
+                sb.append(" d=").append(trim(n.contentDescription, 24));
+            if (n.clickable) sb.append(" C");
+            if (!n.visible) sb.append(" HID");
+            sb.append('}');
+        }
+        return sb.toString();
+    }
+
+    private static String shortClass(String cls) {
+        if (cls == null) return "?";
+        int dot = cls.lastIndexOf('.');
+        return dot < 0 ? cls : cls.substring(dot + 1);
+    }
+
+    private static String trim(String s, int n) {
+        return s.length() <= n ? s : s.substring(0, n) + "…";
+    }
+
+    /** 在整棵树里挑最像用户想点的那个节点（不依赖坐标，也不做模糊的语义猜测）。 */
+    private static UiNode pickByText(WorldState state, String query) {
+        if (state == null || state.root == null) return null;
+        List<UiNode> clickables = new ArrayList<>();
+        UiNode exactClickable = null;
+        UiNode exactAny = null;
+        UiNode containsClickable = null;
+        UiNode containsAny = null;
+        for (UiNode n : state.root.flat()) {
+            if (!n.visible) continue;
+            if (n.clickable) clickables.add(n);
+            boolean exact = n.matchesText(query);
+            boolean contains = n.containsText(query);
+            if (!exact && !contains) continue;
+            if (exact && n.clickable) {
+                if (exactClickable == null) exactClickable = n;
+            } else if (exact) {
+                if (exactAny == null) exactAny = n;
+            } else if (n.clickable) {
+                if (containsClickable == null) containsClickable = n;
+            } else if (containsAny == null) {
+                containsAny = n;
+            }
+        }
+        UiNode chosen = exactClickable != null ? exactClickable
+                : containsClickable != null ? containsClickable
+                : exactAny != null ? exactAny : containsAny;
+        if (chosen == null || chosen.clickable) return chosen;
+        return smallestClickableContaining(clickables, chosen);
+    }
+
+    /** 文本节点自己不可点时，点包含它的最小可点击容器。 */
+    private static UiNode smallestClickableContaining(List<UiNode> clickables, UiNode target) {
+        UiNode best = null;
+        long bestArea = Long.MAX_VALUE;
+        for (UiNode c : clickables) {
+            if (c.left > target.left || c.top > target.top
+                    || c.right < target.right || c.bottom < target.bottom) {
+                continue;
+            }
+            long area = (long) (c.right - c.left) * (c.bottom - c.top);
+            if (area <= 0 || area >= bestArea) continue;
+            bestArea = area;
+            best = c;
+        }
+        return best != null ? best : target;
+    }
+
     private LocateResult locate(String taskId, String actionId, String subGoal, ActionSpec spec, WorldState state) {
         LocateResult r = new LocateResult();
         JSONObject find = spec.params.optJSONObject("find");
@@ -755,6 +1013,29 @@ public final class ActionExecutor {
         return o;
     }
 
+    /**
+     * 读一次快照；读不到窗口树时在 graceMs 内重试。
+     *
+     * <p>窗口切换瞬间 root 可能为空，属于正常抖动；但无障碍连接半死时
+     * （实测：宿主进程被 force-stop 后服务仍显示 Bound，root 持续为 null）
+     * 重试也无效，由调用方按 A11Y_ROOT_UNAVAILABLE 报错。
+     */
+    private WorldState snapshotWithGrace(String source, long graceMs) {
+        long deadline = System.currentTimeMillis() + Math.max(0, graceMs);
+        AgentAccessibilityService svc = AgentAccessibilityService.getInstance();
+        while (true) {
+            WorldState st = svc != null ? svc.snapshot(source) : stateEngine.current();
+            if (st != null && st.root != null) return st;
+            if (System.currentTimeMillis() >= deadline) return st;
+            try {
+                Thread.sleep(120L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return st;
+            }
+        }
+    }
+
     private ExecResult waitForCondition(ActionSpec spec, AtomicBoolean cancelRequested,
                                         long taskDeadlineMs) {
         long start = System.currentTimeMillis();
@@ -775,9 +1056,7 @@ public final class ActionExecutor {
                             epoch, elapsed(start));
                 }
                 if (now >= actionDeadlineMs) {
-                    return ExecResult.timeout("WAIT_TIMEOUT",
-                            "pkg=" + pkg + " ui=" + uiContains + " tree=" + compactDump(stateEngine.current()),
-                            epoch, elapsed(start));
+                    return waitTimeoutResult(pkg, uiContains, epoch, start);
                 }
                 if (svc != null) svc.snapshot("wait_for");
                 if (cancelRequested != null && cancelRequested.get()) {
@@ -789,9 +1068,7 @@ public final class ActionExecutor {
                             epoch, elapsed(start));
                 }
                 if (now >= actionDeadlineMs) {
-                    return ExecResult.timeout("WAIT_TIMEOUT",
-                            "pkg=" + pkg + " ui=" + uiContains + " tree=" + compactDump(stateEngine.current()),
-                            epoch, elapsed(start));
+                    return waitTimeoutResult(pkg, uiContains, epoch, start);
                 }
                 WorldState st = stateEngine.current();
                 if (st != null) {
@@ -807,9 +1084,7 @@ public final class ActionExecutor {
                                     epoch, elapsed(start));
                         }
                         if (completedAt >= actionDeadlineMs) {
-                            return ExecResult.timeout("WAIT_TIMEOUT",
-                                    "pkg=" + pkg + " ui=" + uiContains + " tree=" + compactDump(st),
-                                    epoch, elapsed(start));
+                            return waitTimeoutResult(pkg, uiContains, epoch, start);
                         }
                         return ExecResult.ok("WAIT_OK", "pkg=" + st.foregroundPackage, epoch, elapsed(start));
                     }
@@ -822,6 +1097,25 @@ public final class ActionExecutor {
             Thread.currentThread().interrupt();
             return ExecResult.cancelled("INTERRUPTED", "wait_for interrupted", epoch);
         }
+    }
+
+    /**
+     * wait_for 超时时的回执：区分"等不到界面"和"根本读不到窗口"。
+     *
+     * <p>无障碍连接半死时（服务仍显示 Bound，但 getRootInActiveWindow 持续返回 null），
+     * 报 WAIT_TIMEOUT 会误导排查方向；这里回 A11Y_ROOT_UNAVAILABLE 并给出处置办法。
+     */
+    private ExecResult waitTimeoutResult(String pkg, String uiContains, long epoch, long start) {
+        WorldState st = stateEngine.current();
+        if (st == null || st.root == null) {
+            return ExecResult.fail("A11Y_ROOT_UNAVAILABLE",
+                    "accessibility root unavailable for the whole wait (service bound but no window tree);"
+                            + " rebind accessibility service (pkg=" + pkg + ")",
+                    epoch, elapsed(start));
+        }
+        return ExecResult.timeout("WAIT_TIMEOUT",
+                "pkg=" + pkg + " ui=" + uiContains + " tree=" + compactDump(st),
+                epoch, elapsed(start));
     }
 
     private static String compactDump(WorldState state) {

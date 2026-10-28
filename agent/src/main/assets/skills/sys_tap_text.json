@@ -1,0 +1,16 @@
+{
+  "skill_id": "sys.tap_text",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["text"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "按当前界面可见文字点击；首屏看不到就按 direction 滚动最多 max_scrolls 次再找。用于真实应用中藏在抽屉/列表下方的入口（实测 NewPipe 的「设置」）",
+  "postconditions": [],
+  "steps": [
+    {"action": "tap_text",
+     "params": {"text": "${text}", "scroll": true, "max_scrolls": 2, "direction": "down", "settle_ms": 800},
+     "timeout_ms": 45000}
+  ]
+}

@@ -23,7 +23,9 @@ public final class ActionSpec {
         // --- V1.8 新增：文件修改（追加）与删除 ---
         APPEND_FILE, DELETE_FILE,
         // --- V1.3 新增：输入法注入通道 ---
-        IME_COMMIT, IME_READ, IME_KEY;
+        IME_COMMIT, IME_READ, IME_KEY,
+        // --- V1.9 新增：按文本点击（找不到自动滚动） ---
+        TAP_TEXT;
 
         public static ActionType fromString(String s) throws JSONException {
             if (s == null) throw new JSONException("action type is null");
@@ -71,6 +73,7 @@ public final class ActionSpec {
                 case "ime_commit": return IME_COMMIT;
                 case "ime_read": return IME_READ;
                 case "ime_key": return IME_KEY;
+                case "tap_text": return TAP_TEXT;
                 default:
                     throw new JSONException("action type not in whitelist: " + s);
             }
@@ -119,6 +122,7 @@ public final class ActionSpec {
                 case IME_COMMIT: return "ime_commit";
                 case IME_READ: return "ime_read";
                 case IME_KEY: return "ime_key";
+                case TAP_TEXT: return "tap_text";
                 default: return "recover";
             }
         }

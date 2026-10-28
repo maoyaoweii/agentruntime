@@ -4,6 +4,7 @@ import com.agentruntime.audit.AuditLogger;
 import com.agentruntime.dsl.ActionSpec;
 import com.agentruntime.dsl.TaskSpec;
 import com.agentruntime.executor.ActionExecutor;
+import com.agentruntime.executor.AppLaunchPolicy;
 import com.agentruntime.executor.ExecResult;
 import com.agentruntime.planner.ModelRouter;
 import com.agentruntime.service.AgentAccessibilityService;
@@ -106,6 +107,7 @@ public final class AgentRuntime {
         int executedActions = 0;
         int succeededSteps = 0;
         int failedSteps = 0;
+        boolean launchedAnyApp = false;
         ReplanBudget replanBudget = new ReplanBudget(task.limits.maxReplans);
         JSONArray stepLog = new JSONArray();
 
@@ -158,6 +160,7 @@ public final class AgentRuntime {
                     }
                 }
                 executedActions += outcome.actionsExecuted;
+                launchedAnyApp |= outcome.launchedApp;
                 stepLog.put(outcome.log);
                 if (outcome.ok) {
                     succeededSteps++;
@@ -194,6 +197,7 @@ public final class AgentRuntime {
                             }
                         }
                         executedActions += retry.actionsExecuted;
+                        launchedAnyApp |= retry.launchedApp;
                         stepLog.put(retry.log);
                         if (retry.ok) {
                             succeededSteps++;
@@ -224,6 +228,28 @@ public final class AgentRuntime {
             }
             if (System.currentTimeMillis() >= deadline) {
                 return finish(task, "TIMEOUT", start, stepLog, executedActions, succeededSteps, failedSteps);
+            }
+
+            // 任务级目标核验：计划里允许的应用，与任务结束时实际停留的应用必须一致。
+            // 实测 B03/B04：目标是「打开 Aurora 商店 / F-Droid」，实际执行的是 sys.open_clock，
+            // 步骤级断言 package_is:com.android.deskclock 自己通过了，任务仍报 SUCCESS——
+            // 「跑错了却报成功」是最危险的失败方式，所以这一条不接受任何后置断言替代。
+            if (launchedAnyApp && !task.allowedApps.isEmpty()) {
+                AgentAccessibilityService sTarget = AgentAccessibilityService.getInstance();
+                com.agentruntime.state.WorldState finalState =
+                        sTarget != null ? sTarget.snapshot("task_target") : stateEngine.current();
+                String foreground = finalState == null ? null : finalState.foregroundPackage;
+                boolean reached = AppLaunchPolicy.targetReached(task.allowedApps, foreground);
+                JSONObject targetLog = new JSONObject();
+                targetLog.put("target_check", "foreground_in_allowed_apps");
+                targetLog.put("foreground", foreground == null ? "" : foreground);
+                targetLog.put("allowed", new JSONArray(task.allowedApps));
+                targetLog.put("ok", reached);
+                stepLog.put(targetLog);
+                if (!reached) {
+                    return finish(task, "TASK_TARGET_MISMATCH", start, stepLog,
+                            executedActions, succeededSteps, failedSteps);
+                }
             }
 
             // 任务级后置断言
@@ -275,6 +301,7 @@ public final class AgentRuntime {
 
     private static final class StepOutcome {
         boolean ok;
+        boolean launchedApp;
         int actionsExecuted;
         String code = "OK";
         long durationMs;
@@ -323,6 +350,9 @@ public final class AgentRuntime {
                 ExecResult r = actionExecutor.execute(task.taskId, step.skillId,
                         stepSubGoal(step), action, task.allowedApps, cancelRequested, deadline);
                 out.actionsExecuted++;
+                if (action.type == ActionSpec.ActionType.LAUNCH_APP && r.ok()) {
+                    out.launchedApp = true;
+                }
                 JSONObject ar = new JSONObject();
                 ar.put("action", action.type.wireName());
                 ar.put("result", r.toLogJson());

@@ -37,6 +37,24 @@ public class AppLaunchPolicyTest {
         assertEquals(Collections.emptyList(), AppLaunchPolicy.declaredLaunchTargets(null));
     }
 
+    @Test
+    public void taskTargetCheckRejectsWrongForegroundApp() {
+        // 实测 B03/B04：目标应用是商店，实际停在时钟，任务却报 SUCCESS。
+        assertFalse(AppLaunchPolicy.targetReached(
+                Arrays.asList("com.aurora.store", "org.fdroid.fdroid"), "com.android.deskclock"));
+        assertTrue(AppLaunchPolicy.targetReached(
+                Arrays.asList("com.aurora.store", "org.fdroid.fdroid"), "com.aurora.store"));
+    }
+
+    @Test
+    public void taskTargetCheckIsSkippedForAppFreeTasks() {
+        // 纯 Agent 内部任务（截图/观测）不涉及外部应用，不能因此判失败。
+        assertTrue(AppLaunchPolicy.targetReached(Collections.<String>emptyList(), "com.android.launcher3"));
+        assertTrue(AppLaunchPolicy.targetReached(null, null));
+        // 允许集合非空但读不到前台包时，按未达成处理，不允许"读不到就算成功"。
+        assertFalse(AppLaunchPolicy.targetReached(Collections.singletonList("com.aurora.store"), null));
+    }
+
     private static ActionSpec launch(String packageName) throws Exception {
         JSONObject params = new JSONObject();
         params.put("package", packageName);

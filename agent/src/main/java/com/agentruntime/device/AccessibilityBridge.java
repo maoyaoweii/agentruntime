@@ -61,7 +61,9 @@ public final class AccessibilityBridge implements DeviceBridge {
         AgentAccessibilityService svc = AgentAccessibilityService.getInstance();
         boolean ok = svc != null && svc.click(target);
         if (!ok) return ExecResult.fail("CLICK_FAILED", "performAction returned false or node expired", epoch(), elapsed(start));
-        return ExecResult.ok("CLICK_OK", "clicked " + target.resourceId + "/" + target.text, epoch(), elapsed(start));
+        return ExecResult.ok("CLICK_OK", "clicked " + target.resourceId + "/" + target.text
+                + " @" + target.left + "," + target.top + "," + target.right + "," + target.bottom,
+                epoch(), elapsed(start));
     }
 
     @Override

@@ -4,15 +4,17 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 21] 2026-10-28 - 常见应用下载/真机操控测试 + 本地小模型作用与护栏**。
-> 下载并安装 4 个真实第三方应用（F-Droid / NewPipe / Aurora Store / AntennaPod，均含 x86_64），
-> 由云模型规划真实操控；实测发现内置意图模型**实体盲区**（把「打开 Aurora 商店应用」判成 open_clock，
-> 真去开时钟且报 SUCCESS），已加护栏并补单测（2 用例）。JVM 全量 **308/308** 通过。
-> 上一轮：[任务 20] 本地文件创建/修改/读取/删除 + 4 个真实系统应用操控（含 run-as 外部磁盘校验）。
+> 最新一轮见文末 **[任务 22] 2026-10-28 - 任务 21 遗留三问题修复 + 按文本点击原语 + 实机复验**。
+> 三条修复全部在真实 AOSP 11 模拟器上复验通过：C01/C02（目标句点名真实应用不再被误判成 open_clock，
+> 同一次请求即落盘云端配置，问题 85）、C03（错误目标在派发前被 `APP_NOT_ALLOWED` 拦下）、
+> C04/C05（新增 `tap_text` / `launch_and_tap_text` 原语：按可见文本找节点→找不到自动滚动→点击，
+> 成功点进 NewPipe 抽屉里的 Settings，即 B01 失败点）、C06（跑错应用收尾返回 `TASK_TARGET_MISMATCH`，问题 88）。
+> JVM 全量 **318/318** 通过。上一轮：[任务 21] 常见应用下载/真机操控测试 + 本地小模型作用与护栏。
 > 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/real_app_control_20261028.mp4`、
 > `verification/recordings/permission_flow_real_aosp_20261025.mp4`、
 > `verification/recordings/overlay_task_panel_20261025.mp4`、
-> `verification/recordings/third_party_real_plan_20261025.mp4`。
+> `verification/recordings/third_party_real_plan_20261025.mp4`；本轮设备证据：
+> `verification/hardening/C01..C06`（json/png/xml）。
 
 ## 当前目标
 依据《Android_AI_Agent_Runtime项目立项与研发技术方案_V1.0.docx》，实现可安装的 Android Agent APK（含 State Engine、Action Executor、Skill Engine、Model Router、DeviceBridge、Assistant UI）与 AgentTestApp 测试应用，产出实物 APK，并在虚拟机（Android Emulator）上完成端到端验证，形成结构化测试报告。
@@ -31,6 +33,7 @@
 - **真实应用控制验证：笔记（Fossify Notes，含 sqlite3 落库断言）4/4、时钟 3/3 SUCCESS；浏览器控制链 4/4 动作 OK（渲染断言受 TCG 无 AVX 环境限制）**
 - **持续性验证（5 轮）与交付打包：`/workspace/AgentRuntime_V1.0_delivery.zip`（含 APK×2/脚本/结果/录屏/日志）**
 - **V1.7：Linux 无 KVM 下 TCG 部署真实模拟器成功；当前 APK 设备端验证（核心 6/6、浏览器 DOM 2/2、负例 3/3）；修复 4 项真机缺陷**
+- **V1.9（[任务 22]）：任务级目标核验（`TASK_TARGET_MISMATCH`）、云端配置同请求落盘、`tap_text`/`launch_and_tap_text` 按文本找+滚动+点原语；动作原语 42→43、技能 28→30；设备端 C01–C06 全绿、JVM 318/318**
 
 ### 进行中
 - 无
@@ -42,14 +45,19 @@
 - Google Play 分发合规决策（方案第 14 章）
 
 ### 当前主要问题
+- 无障碍服务在 `force-stop com.agentruntime.agent` 后会进入「已绑定但窗口树读不到」的半死状态：已能识别（`A11Y_ROOT_UNAVAILABLE`）并用 `getWindows()` 兜底，但彻底恢复仍需重写 `enabled_accessibility_services` 后等 10–15s
+- 无窗口 + SwiftShader 下 `adb screencap` 偶尔整屏全黑（`bad color buffer handle`）：设备端证据改用 `uiautomator dump` + `mCurrentFocus`
+- 云端规划存在上游波动（偶发一次 `cloud planner transport failure`，重跑即成功）
+- 尚未在物理真机 ROM 上验证（当前仅为 x86_64 TCG AOSP 11 模拟器）
 - 剪贴板回读在 API 29+ 非焦点场景被系统拒绝（`sys.clipboard_copy` 写入 OK、回读 `CLIPBOARD_EMPTY`）
 - 端侧 SmolVLM 权重未提供，生成循环未联调
-- 已解决：录屏全黑（根因见 [任务 15] 问题 72）；真实云规划成功率由 2/4 提升到 5/5
+- 已解决：录屏全黑（根因见 [任务 15] 问题 72）；真实云规划成功率由 2/4 提升到 5/5；跑错应用误报 SUCCESS（[任务 22] 问题 88）；抽屉/首屏外节点点不到（[任务 22] B01）
 
 ### 下一步
-1. 在带第三方应用的镜像/真机上补跑 notes/clock 技能（含 sqlite3 落库断言）
-2. 云 Planner 按用户数据策略接入真实模型供应商
-3. 依方案第 15 章推进软著/专利材料
+1. 在物理真机上复跑 `verification/runtime_hardening_ops.sh` 与 `_ops2.sh`（C01–C06）
+2. 云端 Planner 按用户数据策略接入真实模型供应商（当前经宿主 `cloud_proxy.py` → 讯飞 MaaS `spark-x2.6`）
+3. 把 `tap_text` 接入更多技能模板（列表项、底部导航、设置二级页）
+4. 依方案第 15 章推进软著/专利材料
 
 ---
 
@@ -2712,3 +2720,139 @@ M07 帮我把手机的飞行模式关掉 ERROR            → "no planner availa
 ### 当前状态
 `部分完成：应用下载与安装 4/4、离线本地模型证据齐备；实体盲区已修复且单测通过；设备端复验与目标包后置校验待下一轮`
 
+
+---
+
+## [任务 22] 2026-10-28 19:35 - 修复 B01/目标核验遗留 + 无障碍半死自愈与按文本点击命中修正
+
+### 本次目标
+- 修复 [任务 21] 遗留三问题：任务级目标核验（问题 88）、带 goal 请求落盘云端配置（问题 85）、
+  「节点藏在抽屉/首屏外」的 B01 类失败；
+- 在真实 AOSP 模拟器上复验上述修复，并把「按文本找 + 滚动 + 点」做成可复用的原语能力。
+
+### 修改前状态
+- 问题 88/85 代码已改但未在设备端复验；B01 只有规划失败记录，没有可用的定位原语；
+- 设备端 `wait_for` 与 `tap_text` 出现两种互不相干的假象：
+  `WAIT_TIMEOUT 60001ms`（前台确实是目标应用）与 `NODE_NOT_FOUND`。
+
+### 修改记录
+
+#### 修改 1 新增 `tap_text` 原语（按可见文本找 + 自动滚动 + 点击）
+- 文件：`agent/.../executor/ActionExecutor.java`、`dsl/ActionSpec.java`、`dsl/DslParser.java`、
+  `assets/skills/sys_tap_text.json`、`assets/skills/sys_launch_and_tap_text.json`
+- 内容：动作白名单 42 → 43；匹配顺序「精确可点 → 包含可点 → 精确 → 包含」，
+  命中不可点文本时点「包含该节点的最小可点击祖先」；`max_scrolls` 0..5、`direction`、`settle_ms`。
+- 原因：真实应用入口常在抽屉/列表下方，一步 `click_node` 永远定位不到。
+
+#### 修改 2 挡路弹窗自动关闭 + 多个可滚动容器选最上层
+- 文件：`ActionExecutor.java`（`dismissBlockingDialog` / `isDialogWindow` / `bottomUpScrollables`）
+- 内容：只点白名单按钮（OK/Got it/Continue/Close/Dismiss/确定/知道了/关闭/继续），
+  **绝不点 Allow/允许**；弹窗判定改用平台结构标记（`android:id/parentPanel`、`button1/2`、
+  `buttonPanel`、`alertTitle`、类名含 dialog），因为实测应用可见区只有 720x1012，
+  「窗口比屏幕小」判据永远为假。
+
+#### 修改 3 无障碍半死自愈 + 明确的 A11Y_ROOT_UNAVAILABLE
+- 文件：`service/AgentAccessibilityService.java`、`executor/ActionExecutor.java`
+- 内容：
+  - `activeRoot()`：`getRootInActiveWindow()` 为 null 时兜底读 `getWindows()` 中最上层应用窗口，
+    仍失败则累计 `nullRootStreak` 并打 `A11ySnap` 日志（含窗口类型列表）；
+  - `snapshotWithGrace()`：`tap_text` 读不到窗口树时最多等 10s；
+  - `waitForCondition` / `waitTimeoutResult`：只有等到超时仍读不到窗口树，才回
+    `A11Y_ROOT_UNAVAILABLE`（提示重新绑定无障碍），否则保持 `WAIT_TIMEOUT`。
+
+#### 修改 4 点击命中修正：身份优先 + 最近坐标 tiebreak
+- 文件：`service/AgentAccessibilityService.java`、`device/AccessibilityBridge.java`
+- 内容：`findLiveNode` 先按完整身份匹配，再按 resourceId 兜底；同一身份多命中时选
+  与快照中心最近的节点。`CLICK_OK` 的 detail 追加点击坐标，便于事后定位。
+
+#### 修改 5 验证脚本
+- 文件：`verification/runtime_hardening_ops.sh`、`verification/runtime_hardening_ops2.sh`
+- 内容：每个用例前 `am force-stop` 被测应用；C05 抽屉按钮文案改为实测的 `Open Drawer`；
+  C03 期望改为「错误目标在派发前就被拦下」（`APP_NOT_ALLOWED`）；
+  `report()` 额外保存 `uiautomator` 树 `$name.xml`（截图在无窗口模式下可能全黑）。
+
+### 问题记录
+
+#### 问题 89：无障碍服务"显示 Bound 但读不到任何窗口树"（已定位）
+- 现象：`dumpsys accessibility` 里服务 Bound，前台 `mCurrentFocus` 确实是目标应用，
+  但 `getRootInActiveWindow()` 持续返回 null；`wait_for` 60s 超时、`tap_text` 报 NODE_NOT_FOUND。
+- 排查：设备端日志 `A11ySnap: root unavailable streak=... windows=3 3 1*`，
+  `getWindows()` 能看到一个应用窗口但其 `getRoot()` 同样为 null；
+  对比实验：对宿主进程 `am force-stop com.agentruntime.agent` 后必然进入该状态，
+  重新写 `enabled_accessibility_services` 后 10s 内恢复（同一时刻 `tap_text` 立刻 `nodes=50`）。
+- 根因：宿主进程被强停后系统把连接仍标记为 Bound，实际连接已废；这不是界面问题。
+- 处理：代码加窗口兜底 + 诊断日志 + `A11Y_ROOT_UNAVAILABLE`；验证脚本一律不再强停宿主，
+  遇到该错误按提示重绑无障碍（写入本节"关键参数"）。
+- 结果：已解决（可识别、可自愈于窗口切换场景）。
+
+#### 问题 90：`tap_text` 点开的是 History 而不是 Settings（已修复）
+- 现象：C05 所有动作都 OK、`ui_contains:Settings` 却失败，截图停在 NewPipe「History」页。
+- 排查：设备树显示抽屉行全部是 `CheckedTextView`（共用 `:id/design_menu_item_text`），
+  其可点击父容器是同构 `LinearLayoutCompat`（无文本、无 resourceId），
+  即"同一身份存在 5 个节点"；旧实现先按 resourceId 或首个身份命中，必然点到第一行。
+- 处理：见修改 4。
+- 结果：已解决（C05 复跑命中 `SettingsActivity`）。
+
+#### 问题 91：冷启动期窗口树为空被误判为等待失败
+- 现象：`wait_for(package)` 在 NewPipe/AntennaPod 冷启动时读不到树，3s、15s 阈值都触发过误报。
+- 处理：不在等待过程中按时间判断，只有"等满超时仍读不到"才回 `A11Y_ROOT_UNAVAILABLE`。
+- 结果：已解决（C02/C04/C06 的 `wait_for` 均 WAIT_OK，实测 15s 左右恢复）。
+
+#### 问题 92：验证脚本自身的状态污染与过时断言
+- 现象：C04 因上一条用例把 AntennaPod 留在 Queue 页而 `NODE_NOT_INTERACTABLE`；
+  C01/C02 因为没传 `MAAS_API_KEY` 直接 `http 401`。
+- 处理：见修改 5；云端用例通过 `MAAS_API_KEY=... bash verification/runtime_hardening_ops.sh` 运行。
+- 结果：C04 复跑 SUCCESS；C01 首次 `cloud planner transport failure`，重试 SUCCESS。
+
+### 最终修改结果
+**本次完成：**
+- 目标核验（问题 88）：任务收尾前台不在 `allowed_apps` 内 → `TASK_TARGET_MISMATCH`；
+- 云端配置（问题 85）：同一次请求带 goal + 三参数即可用（`cloud_configured:true`、`cloud_calls>=1`）；
+- 按文本点击 + 弹窗关闭 + 最上层滚动 + 点击命中修正；
+- 无障碍窗口读取兜底与错误码语义（`A11Y_ROOT_UNAVAILABLE`）。
+
+**涉及文件：**
+- `agent/src/main/java/com/agentruntime/executor/ActionExecutor.java`
+- `agent/src/main/java/com/agentruntime/service/AgentAccessibilityService.java`
+- `agent/src/main/java/com/agentruntime/device/AccessibilityBridge.java`
+- `agent/src/main/java/com/agentruntime/runtime/AgentRuntime.java`、`executor/AppLaunchPolicy.java`、
+  `ui/TaskExecActivity.java`、`dsl/ActionSpec.java`、`dsl/DslParser.java`
+- `agent/src/main/assets/skills/sys_tap_text.json`、`sys_launch_and_tap_text.json`
+- `agent/src/test/java/com/agentruntime/executor/TapTextDialogTest.java`（新增 6 用例）
+- `verification/runtime_hardening_ops.sh`、`verification/runtime_hardening_ops2.sh`
+- `verification/hardening/*.json|xml|png`
+
+**关键参数/配置变化：**
+- 动作原语：42 → **43**（新增 `tap_text`）
+- `tap_text.max_scrolls`：默认 2，范围 0..5；`settle_ms` 默认 800（300..3000）
+- 弹窗自动关闭白名单：`ok/okay/got it/continue/close/dismiss/no thanks/确定/知道了/明白了/关闭/继续`
+- 模拟器：`-accel off -cores 2 -memory 2048 -gpu swiftshader_indirect -skin 720x1280 -no-window`
+- 无障碍正确操作顺序（实测）：先 `accessibility_enabled 0` → 写 `enabled_accessibility_services`
+  → `accessibility_enabled 1` → 等 10–15s 确认 `Bound services:{Service[...]}`；
+  **reinstall 后必须重做一次**。
+
+### 验证情况
+- 编译：通过（JDK 17 + Gradle 8.14.6，`:agent:assembleDebug`）。
+- 单元测试：**318/318 通过，0 失败 0 错误**（`TapTextDialogTest` 6 用例）。
+- 实机（720x1280 TCG，AOSP 11 `android-30;default;x86_64`）：
+```
+C01 打开 Aurora 商店     SUCCESS  23.1s   cloud=1  focus=com.aurora.store/ComposeActivity（首次 transport failure，重试成功）
+C02 打开 F-Droid 商店    SUCCESS  20.6s   cloud=1  focus=org.fdroid.fdroid
+C03 允许 A 却开时钟      FAILED    1.1s   launch_app REJECTED/APP_NOT_ALLOWED（派发前拦下）
+C04 AntennaPod Queue     SUCCESS  21.3s   tap_text TAP_TEXT_OK，target_check ok
+C05 NewPipe 抽屉 Settings SUCCESS  28.9s   tap_text×2 OK，focus=...settings.SettingsActivity
+C06 允许{A,B}却停在设置   TASK_TARGET_MISMATCH 31.8s  target_check ok=False foreground=com.android.settings
+```
+- 界面证据：`verification/hardening/C*.xml`（uiautomator 树）；C05 树中含 `text="Settings"`。
+- **截图限制**：本轮无窗口 + SwiftShader 出现整屏黑（`bad color buffer handle`），
+  `C*.png` 为黑图，界面证据以上述 xml/focus 为准；非代码缺陷，记为环境限制。
+- 真机（物理设备）验证：未进行。
+
+### 遗留问题
+1. 无窗口模式的截图全黑（SwiftShader 颜色缓冲异常），需要重新起模拟器或改 `-gpu` 才能出图；
+2. 云端偶发 `cloud planner transport failure`（C01 首跑），重试即成功，属上游波动；
+3. 无障碍半死状态只能识别不能自动重绑（Android 未提供该 API），需要脚本或用户重绑；
+4. 真机 ROM 未验证；`wait_for` 在极慢设备上的恢复时间可能超过 15s（当前为硬编码等待）。
+
+### 当前状态
+`完成：三条遗留问题全部复验通过 + 按文本点击能力落地，JVM 318/318、设备端 C01–C06 全绿`

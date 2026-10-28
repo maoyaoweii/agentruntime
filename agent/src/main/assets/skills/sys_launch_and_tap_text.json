@@ -1,0 +1,19 @@
+{
+  "skill_id": "sys.launch_and_tap_text",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["app_package", "text"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "启动指定应用后按可见文字点击；首屏找不到自动滚动。用于真实应用里藏在抽屉/列表下方的入口（实测 NewPipe 的「Settings」在导航抽屉里，一步 click_node 永远定位不到）",
+  "postconditions": [],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "${app_package}"}, "timeout_ms": 40000},
+    {"action": "wait_for", "params": {"package": "${app_package}"}, "timeout_ms": 60000},
+    {"action": "wait_ms", "params": {"ms": 1200}, "timeout_ms": 5000},
+    {"action": "tap_text",
+     "params": {"text": "${text}", "scroll": true, "max_scrolls": 2, "direction": "down", "settle_ms": 800},
+     "timeout_ms": 45000}
+  ]
+}
