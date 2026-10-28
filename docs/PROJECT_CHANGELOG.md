@@ -4,16 +4,17 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 23] 2026-10-28 - Android 原生能力增强（通知读取 / 方向滑动 / 全局键扩展）**。
-> V2.0 在原装 AOSP 11 模拟器上复验通过：N01/N02（`sys.notifications` 经 `NotificationListenerService`
-> 读到系统通知 → `sys.swipe` 走 `dispatchGesture` 原生手势上滑，落到 launcher 应用抽屉），
-> 动作原语 43→**45**、技能 30→**32**；JVM 全量 **321/321** 通过。
+> 最新一轮见文末 **[任务 24] 2026-10-28 - 全流程实拍录屏（主界面 → 通知 → 第三方应用 → 时钟 → 上滑抽屉）**。
+> 原速 156s / 2 倍速 78s，产物 `verification/recordings/flow_20261028/`。
+> 最近一次代码改动：[任务 23] Android 原生能力增强（通知读取 / 方向滑动 / 全局键扩展），
+> 动作原语 43→**45**、技能 30→**32**；JVM **321/321** 通过，设备端 N01/N02 全绿。
 > 上一轮：[任务 22] 任务 21 遗留三问题修复 + `tap_text` 按文本点击原语 + 实机复验（C01–C06 全绿）。
 > 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/real_app_control_20261028.mp4`、
 > `verification/recordings/permission_flow_real_aosp_20261025.mp4`、
 > `verification/recordings/overlay_task_panel_20261025.mp4`、
 > `verification/recordings/third_party_real_plan_20261025.mp4`；设备证据：
-> `verification/hardening/C01..C06`（[任务 22]）、`verification/native/N01/N02`（[任务 23]，json/xml/audit）。
+> `verification/hardening/C01..C06`（[任务 22]）、`verification/native/N01/N02`（[任务 23]，json/xml/audit）、
+> 全流程录屏 `verification/recordings/flow_20261028/flow_20261028{,_2x}.mp4`（[任务 24]）。
 
 ## 当前目标
 依据《Android_AI_Agent_Runtime项目立项与研发技术方案_V1.0.docx》，实现可安装的 Android Agent APK（含 State Engine、Action Executor、Skill Engine、Model Router、DeviceBridge、Assistant UI）与 AgentTestApp 测试应用，产出实物 APK，并在虚拟机（Android Emulator）上完成端到端验证，形成结构化测试报告。
@@ -3016,3 +3017,110 @@ N02（重装复验）SUCCESS  steps=[('sys.notifications',True,['NOTIFICATIONS_L
 - 单测用 `--rerun-tasks` **强制重跑**：`tests=321 failures=0 errors=0 skipped=0`，BUILD SUCCESSFUL。
 - 提交：`22de6c8 V2.0: 通知读取 + 方向滑动 + 全局键扩展`（19 files, +794/−23），已推送 `origin/main`（`31d5399..22de6c8`）。
 - 模拟器已 `adb emu kill` 关闭，`pgrep -f qemu-system-x86_64` 为 0，宿主空闲内存恢复 ~5GB；宿主 `cloud_proxy.py` 未在本轮启动（`ss` 复核 8900/5554/5555 无监听）。
+
+---
+
+## [任务 24] 2026-10-28 - 全流程实拍录屏（主界面 → 通知 → 第三方应用 → 时钟 → 上滑抽屉）
+
+### 本次目标
+- 用户要求：「来一段实际测试的录屏，对软件实际使用的全流程录屏」
+- 产出一段从冷启动到任务结束的连续视频，覆盖 V2.0 新能力（通知读取、原生手势）与真实应用操控
+- 不改业务代码，只加可复跑的录屏脚本与证据
+
+### 修改前状态
+- 已有录屏均为分散片段（`real_app_control_20261028.mp4` 105KB、`third_party_real_plan_20261025.mp4` 434KB 等），
+  没有「打开 Agent → 读通知 → 操作真实应用 → 原生手势」的一镜到底素材
+- V2.0 代码已提交（`22de6c8`），APK 为最新（`agent-debug.apk` 37MB）
+
+### 预计修改
+- 新增 `verification/record_full_flow.sh`：安装 → 绑定无障碍/通知监听 → 起 `screenrecord` → 依次驱动两个任务 → 取回视频
+- 产物目录 `verification/recordings/flow_20261028/`
+
+### 修改记录
+
+#### 修改 1
+**文件：** `verification/record_full_flow.sh`（新增）
+**修改内容：**
+- 前置：`adb install -r`、重写 `enabled_accessibility_services` + `accessibility_enabled`、`cmd notification allow_listener`、等 12s；
+- 录屏：`adb shell screenrecord --bit-rate 6000000 --time-limit 180 /sdcard/flow_20261028.mp4` 后台启动；
+- 任务一（`task_json_b64`，`allowed_apps=[de.danoeh.antennapod, com.android.deskclock]`）：
+  `sys.notifications` → `sys.launch_and_tap_text`(AntennaPod, "Queue") → `sys.open_clock`；
+- 任务二（`allowed_apps=[]`）：`sys.swipe` up，落点应用抽屉；
+- 每步抓 result json + uiautomator xml + `mCurrentFocus`，最后 `adb pull` 视频。
+**修改原因：** 录屏要能一键复跑，否则每次都得手敲十条 adb 命令。
+**预期效果：** 单脚本产出视频 + 结构化证据。
+
+#### 修改 2
+**文件：** `verification/recordings/flow_20261028/flow_20261028.mp4`、`flow_20261028_2x.mp4`（证据，非代码）
+**修改内容：** 原速 156s（h264 720x1280），另用 ffmpeg `setpts=0.5*PTS` 生成 78s 的 2 倍速版，便于快速观看。
+**修改原因：** TCG 下 AntennaPod 冷启动与动画拖长，原速观看节奏偏慢。
+**预期效果：** 既能看真实耗时，也能快速总览。
+
+### 遇到的问题
+
+#### 问题 1：`screenrecord --time-limit 240` 被直接拒绝
+**现象：** `Time limit 240s outside acceptable range [1,180]`，首轮因此没有产生视频文件。
+**根因：** Android 11 的 `screenrecord` 硬上限 180s。
+**解决方案：** 改为 `--time-limit 180`。
+**结果：** 已解决（第二轮成功拉回 1.2MB mp4）。
+
+#### 问题 2：首轮 `adb pull` 报 `No such file or directory`
+**现象：** 任务全部 SUCCESS，但 `/sdcard/flow_20261028.mp4` 不存在。
+**根因：** 录屏根本没启动（问题 1），后续 `kill`/`pull` 都作用在空文件上。
+**解决方案：** 同问题 1；同时把停止方式改为 `pidof screenrecord | xargs adb shell kill -2`。
+**结果：** 已解决。
+
+#### 问题 3：`sys.boot_completed=1` 但 PackageManager 未就绪
+**现象：** 开机后 `pm path` 报 `Can't find service: package`，`logcat` 显示仍在解析 apex（单条 29s）。
+**根因：** TCG 下 system_server 的包扫描远慢于 `boot_completed` 置位，属环境特性。
+**解决方案：** 轮询 `pm path com.agentruntime.agent` 直到返回 `package:` 再开始（约再等 10–60s）。
+**结果：** 已解决（本轮实际用时约 10s 额外等待）。
+
+#### 问题 4：Fossify Notes 不在本 AVD 内
+**现象：** 原计划用 `notes.create_note`，`pm list packages` 里没有 `org.fossify.notes`。
+**解决方案：** 改用已验证过的 AntennaPod（`de.danoeh.antennapod` + `tap_text:"Queue"`，C04 同款路径），不临时装应用。
+**结果：** 已解决。
+
+### 最终修改结果
+
+**本次完成：**
+- 一段连续全流程录屏：Agent 主界面 → 系统通知投递 → AntennaPod 队列（真实第三方应用）→ 系统时钟（含 More options 菜单点击）→ 回桌面 → 原生手势上滑应用抽屉
+- 可复跑脚本 `verification/record_full_flow.sh`
+
+**涉及文件：**
+- 新增：`verification/record_full_flow.sh`
+- 证据：`verification/recordings/flow_20261028/`
+  （`flow_20261028.mp4` 1.2MB/156s、`flow_20261028_2x.mp4` 570KB/78.7s、
+  `T1_notify_app_clock.json|xml`、`T2_swipe_drawer.json|xml`、`01_main.png`、`02_after_clock.png`、`03_drawer.png`）
+
+**关键参数/配置变化：**
+- `screenrecord`：`--bit-rate 6000000 --time-limit 180`（上限）
+- 任务一 `limits`：`max_steps=40 / max_replans=0 / timeout_seconds=420`
+- 模拟器参数同 [任务 23]（`-accel off -cores 2 -memory 2048 -gpu swiftshader_indirect -skin 720x1280 -no-window`）
+
+### 验证情况
+- 设备端（AOSP 11 720x1280 TCG）：
+```
+T1_notify_app_clock  SUCCESS  68.5s  notifications=NOTIFICATIONS_LISTED
+                                    launch_and_tap_text=TAP_TEXT_OK
+                                    open_clock=CLICK_OK/ASSERT_OK/RECOVER_BACK
+                                    focus=com.android.deskclock/DeskClock
+T2_swipe_drawer      SUCCESS   4.9s  swipe=SWIPE_OK
+                                    focus=com.android.launcher3/QuickstepLauncher（应用抽屉）
+```
+- 视频：`ffprobe` 确认 h264 / 720x1280 / 156.0s；抽帧 5/15/30/50/70/85/100/130/150s 共 9 点，
+  亮度均值 12.0→236.8 变化正常，非黑屏；可见主界面、AntennaPod 启动页、时钟菜单、应用抽屉。
+- 单测/编译：本轮未改业务代码，未重跑（沿用 [任务 23] 的 321/321）。
+- 真机录屏：未进行。
+
+### 遗留问题
+1. 视频里 AntennaPod 冷启动（TCG）有较长等待，观感偏慢，已提供 2 倍速版；
+2. 任务之间的「回桌面」由宿主 `adb keyevent HOME` 完成（视频中为分界点），不是 Agent 动作；
+3. 录屏为无窗口模拟器 + SwiftShader 画面，非物理真机实拍；
+4. `screenrecord` 在 TCG 上偶尔丢帧（`bad color buffer handle` 告警），不影响内容。
+
+### 当前状态
+`完成：全流程录屏已产出并抽帧核验，任务 T1/T2 均 SUCCESS`
+
+### 收尾记录（2026-10-28）
+- 模拟器进程在录屏与取证结束后已退出（`ps` 复核无 `qemu-system`，`adb devices` 空，空闲内存 ~5.3GB），未残留实例与端口。
