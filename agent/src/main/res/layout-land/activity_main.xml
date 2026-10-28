@@ -272,6 +272,12 @@
             android:layout_marginTop="6dp"
             android:text="悬浮球" />
 
+        <TextView
+            android:id="@+id/chip_perms"
+            style="@style/Chip"
+            android:layout_marginTop="6dp"
+            android:text="权限申请" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"

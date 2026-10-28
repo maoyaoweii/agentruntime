@@ -47,6 +47,10 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
     private EditText etGoal;
     private CheckBox cbAutoConfirm;
 
+    /** 权限申请的 requestCode。分开放，才能在上层区分"运行时权限结果"和"从设置页回来"。 */
+    private static final int REQ_OVERLAY = 1001;
+    private static final int REQ_RUNTIME = 1004;
+
     private CodexTranscript tx;
     private boolean busy;
     private RomInfo rom;
@@ -83,6 +87,7 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
                 "运行工具冒烟，依次输入清空文本、断言、长按、返回、切换应用、回到桌面"));
         findViewById(R.id.chip_skills).setOnClickListener(v -> open(SkillsActivity.class));
         findViewById(R.id.chip_overlay).setOnClickListener(v -> toggleOverlay());
+        findViewById(R.id.chip_perms).setOnClickListener(v -> requestAllPermissions());
 
         tvVersion.setText("v" + BuildConfig.VERSION_NAME + "  api" + rom.sdk
                 + "  act" + com.agentruntime.dsl.ActionSpec.ActionType.values().length
@@ -173,6 +178,13 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
 
         int skills = app.skillEngine().skillIds().size();
         addChip("skills", String.valueOf(skills), Kind.DIM);
+
+        // 权限单独一项：被拒之后所有"看起来莫名其妙失败"的操作，根因通常在这里，
+        // 必须能在首页一眼看到，而不是去设置页里数。
+        int total = UiKit.runtimePermissions(this).length;
+        int okPerms = UiKit.grantedRuntimePermissions(this).length;
+        addChip("perm", okPerms + "/" + total,
+                okPerms == total ? Kind.OK : Kind.WARN);
 
         // ROM 单独一项：多厂商适配的结论必须能在界面上看见，否则用户无从判断
         // "我这台机器为什么和教程不一样"。
@@ -267,9 +279,10 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
             return;
         }
         if (!AgentAccessibilityService.isRunning()) {
-            UiKit.toast(this, "无障碍服务未开启，先到设置里打开");
-            tx.addError("无障碍未开启，任务没有下发");
-            open(SettingsActivity.class);
+            // 这里以前是直接 startActivity(SettingsActivity)：用户按了"运行"，
+            // 界面却自己跳走了，看起来像被踢出去，而且任务已经写进流水变成一条假记录。
+            // 改成先问一句，跳转由用户决定。
+            showNeedsAccessibility(goal);
             return;
         }
 
@@ -284,6 +297,10 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
 
         TaskBus.get().clearLog();
         TaskBus.get().info("ui", "已下发任务");
+
+        // 悬浮球在跑就主动让出前台：Agent 自己占着前台时无障碍只能看到自己的窗口，
+        // 目标应用的定位会全部超时；任务进度交给浮窗展示，用户仍能全程看到。
+        if (OverlayService.isRunning()) moveTaskToBack(true);
 
         boolean auto = cbAutoConfirm.isChecked();
         new Thread(() -> {
@@ -315,6 +332,112 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
         etGoal.setEnabled(!running);
         if (!running) {
             tvRunning.setText("");
+        }
+    }
+
+    // ------------------------------------------------------------ 权限
+
+    /**
+     * 未开无障碍时的引导。
+     *
+     * <p>不使用 toast 打发：无障碍是这个 App 的硬前提，说不清就没法用。
+     * 对话框里保留用户刚输入的目标，回来之后不用重打一遍。
+     */
+    private void showNeedsAccessibility(String goal) {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("需要先开启无障碍服务")
+                .setMessage("Agent 靠无障碍读取界面结构、执行点击与输入，不开就无法操作其他应用。\n\n"
+                        + "开启后回到这里，刚才输入的目标会保留。")
+                .setNegativeButton("稍后", (d, w) -> tx.addWarn("无障碍未开启，任务没有下发"))
+                .setPositiveButton("去开启", (d, w) -> {
+                    etGoal.setText(goal);
+                    tx.addWarn("无障碍未开启，已跳到系统设置");
+                    UiKit.openAccessibilitySettings(this);
+                })
+                .show();
+    }
+
+    /**
+     * 运行时权限统一申请入口。
+     *
+     * <p>先弹一个说明页再交给系统：系统弹窗只说"允许 App 访问你的照片吗"，
+     * 用户不知道这个 Agent 为什么要照片。说明页把每条权限对应到具体功能，
+     * 之后的逐个同意才是知情的。
+     */
+    private void requestAllPermissions() {
+        String[] missing = UiKit.ungrantedRuntimePermissions(this);
+        StringBuilder sb = new StringBuilder();
+        if (missing.length == 0) {
+            sb.append("运行时权限都已授予。\n\n");
+        } else {
+            sb.append("将依次向系统申请以下 ").append(missing.length).append(" 项权限，")
+                    .append("每一项都需要你本人点「允许」：\n");
+            for (String p : missing) {
+                sb.append("  · ").append(UiKit.permissionLabel(p)).append('\n');
+            }
+            sb.append('\n');
+        }
+        sb.append("还需要两个特殊权限（系统设置页里手动开，无法弹窗）：\n");
+        sb.append("  · 悬浮窗：").append(UiKit.hasOverlayPermission(this) ? "已授权" : "未授权")
+                .append('\n');
+        boolean a11y = AgentAccessibilityService.isRunning();
+        sb.append("  · 无障碍：").append(a11y ? "已开启" : "未开启").append('\n');
+        sb.append('\n');
+        sb.append("存储说明：Android 11 起共享目录被分区存储限制，"
+                + "本 App 不申请 MANAGE_EXTERNAL_STORAGE，"
+                + "文件读写默认走 app 专属目录（/sdcard/Android/data/com.agentruntime.agent/files）。");
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("权限申请")
+                .setMessage(sb.toString())
+                .setNegativeButton("关闭", null)
+                .setNeutralButton("去设置页授权", (d, w) -> open(SettingsActivity.class))
+                .setPositiveButton("开始申请", (d, w) -> {
+                    if (!UiKit.hasOverlayPermission(this)) {
+                        // 悬浮窗必须先给，否则后面的浮窗进度没地方显示。
+                        UiKit.openOverlayPermission(this, REQ_OVERLAY);
+                    }
+                    UiKit.requestRuntimePermissions(this, REQ_RUNTIME);
+                })
+                .show();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        renderStatus();
+        if (requestCode != REQ_RUNTIME) return;
+        int granted = 0;
+        int denied = 0;
+        for (int r : grantResults) {
+            if (r == android.content.pm.PackageManager.PERMISSION_GRANTED) granted++;
+            else denied++;
+        }
+        String[] still = UiKit.ungrantedRuntimePermissions(this);
+        if (still.length == 0) {
+            tx.addNote("perm", "运行时权限已全部授予（本次同意 " + granted + " 项）");
+            return;
+        }
+        // 拒绝之后不能沉默：调用点会在真正需要时返回 NEED_PERMISSION，
+        // 与其那时候让人一头雾水，不如现在就说清楚还差哪几项。
+        StringBuilder sb = new StringBuilder("仍被拒绝 ").append(still.length).append(" 项：\n");
+        for (String p : still) sb.append("  · ").append(UiKit.permissionLabel(p)).append('\n');
+        tx.addWarn("权限未齐（已同意 " + granted + "，拒绝 " + denied + "）");
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("还有权限未授予")
+                .setMessage(sb.toString())
+                .setNegativeButton("知道了", null)
+                .setPositiveButton("去应用详情页", (d, w) -> openAppDetail())
+                .show();
+    }
+
+    private void openAppDetail() {
+        try {
+            startActivity(new android.content.Intent(
+                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + getPackageName())));
+        } catch (Exception e) {
+            UiKit.toast(this, "打不开应用详情页");
         }
     }
 

@@ -4,8 +4,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -13,6 +16,8 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.agentruntime.agent.R;
@@ -35,7 +40,10 @@ import com.agentruntime.ui.UiKit;
  *   <li>球形窗口加 FLAG_NOT_FOCUSABLE（不抢输入焦点），面板窗口去掉该标志（要能打字）。</li>
  * </ul>
  *
- * <p><b>未在设备验证</b>：本环境无真机与模拟器，悬浮窗只做到编译通过与逻辑自洽。
+ * <p><b>任务执行浮窗</b>：任务一开跑就叠一块「AI 在想什么、在做什么」的窗口在被测应用之上，
+ * 顶部标题栏是拖动把手，可自由挪动。之所以不用 Activity 承载：Agent 自己占前台时，
+ * 无障碍 {@code getRootInActiveWindow()} 只能看到 Agent 自己的窗口，所有定位都会超时。
+ * 浮窗用 FLAG_NOT_FOCUSABLE，既不抢被测应用焦点，也不影响它接键盘输入。
  */
 public final class OverlayService extends Service implements TaskBus.Listener {
 
@@ -47,10 +55,19 @@ public final class OverlayService extends Service implements TaskBus.Listener {
     private WindowManager windowManager;
     private View bubbleView;
     private View panelView;
+    private View taskView;
     private WindowManager.LayoutParams bubbleParams;
+    private WindowManager.LayoutParams taskParams;
     private TextView bubbleBadge;
     private TextView panelState;
     private EditText panelInput;
+    private TextView taskTitle;
+    private TextView taskProgress;
+    private ScrollView taskScroll;
+    private LinearLayout taskLog;
+    private boolean taskPanelShown;
+    private final Handler hideHandler = new Handler(Looper.getMainLooper());
+    private final Runnable hideTaskPanel = this::removeTaskPanel;
 
     private int screenWidth;
     private int bubbleSize;
@@ -60,6 +77,10 @@ public final class OverlayService extends Service implements TaskBus.Listener {
     private float downRawY;
     private int bubbleStartX;
     private int bubbleStartY;
+    private float taskDownRawX;
+    private float taskDownRawY;
+    private int taskStartX;
+    private int taskStartY;
     private boolean dragged;
 
     public static boolean isRunning() {
@@ -101,6 +122,7 @@ public final class OverlayService extends Service implements TaskBus.Listener {
     @Override
     public void onDestroy() {
         TaskBus.get().unsubscribe(this);
+        removeTaskPanel();
         removePanel();
         removeBubble();
         running = false;
@@ -126,6 +148,11 @@ public final class OverlayService extends Service implements TaskBus.Listener {
             removePanel();
             showPanel();
         }
+        // 任务浮窗宽度依赖屏宽：重建一次比改 LayoutParams 更省事，也不会残留旧坐标。
+        if (taskPanelShown) {
+            removeTaskPanel();
+            if (TaskBus.get().running()) showTaskPanel();
+        }
         if (bubbleView != null && bubbleParams != null) {
             if (bubbleParams.x > screenWidth - bubbleSize) {
                 bubbleParams.x = screenWidth - bubbleSize - UiKit.dp(this, 4);
@@ -148,6 +175,7 @@ public final class OverlayService extends Service implements TaskBus.Listener {
     }
 
     private void shutdown() {
+        removeTaskPanel();
         removePanel();
         removeBubble();
         running = false;
@@ -316,6 +344,135 @@ public final class OverlayService extends Service implements TaskBus.Listener {
         panelShown = false;
     }
 
+    // ------------------------------------------------------------ 任务执行浮窗
+
+    /**
+     * 任务执行浮窗：默认落在屏幕右上方，不挡目标应用的主要操作区。
+     *
+     * <p>不加 FLAG_NOT_FOCUSABLE 以外的输入标志：窗口本身不该抢焦点，
+     * 但必须能接触摸（拖动 + 关闭），所以用 NOT_TOUCH_MODAL 让窗口区域外的触摸透传。
+     */
+    private void showTaskPanel() {
+        if (taskView != null || windowManager == null) return;
+        hideHandler.removeCallbacks(hideTaskPanel);
+        try {
+            taskView = LayoutInflater.from(this).inflate(R.layout.overlay_task, null);
+            taskTitle = taskView.findViewById(R.id.task_title);
+            taskProgress = taskView.findViewById(R.id.task_progress);
+            taskScroll = taskView.findViewById(R.id.task_scroll);
+            taskLog = taskView.findViewById(R.id.task_log);
+
+            int type = Build.VERSION.SDK_INT >= 26
+                    ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    : WindowManager.LayoutParams.TYPE_PHONE;
+            int width = Math.min(screenWidth - UiKit.dp(this, 48), UiKit.dp(this, 360));
+            taskParams = new WindowManager.LayoutParams(
+                    width,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    PixelFormat.TRANSLUCENT);
+            taskParams.gravity = Gravity.TOP | Gravity.START;
+            taskParams.x = screenWidth - width - UiKit.dp(this, 8);
+            taskParams.y = UiKit.dp(this, 96);
+
+            // 标题栏是拖动把手：整块窗口跟着手指走，松手不吸附，用户可以任意摆放。
+            taskView.findViewById(R.id.task_header).setOnTouchListener(this::onTaskTouch);
+            taskView.findViewById(R.id.task_close).setOnClickListener(v -> removeTaskPanel());
+            windowManager.addView(taskView, taskParams);
+            taskPanelShown = true;
+            taskProgress.setText(TaskBus.get().progressText());
+        } catch (Throwable t) {
+            taskView = null;
+            taskPanelShown = false;
+            taskParams = null;
+        }
+    }
+
+    private void removeTaskPanel() {
+        hideHandler.removeCallbacks(hideTaskPanel);
+        if (taskView != null) {
+            try {
+                windowManager.removeView(taskView);
+            } catch (Throwable ignored) {
+            }
+        }
+        taskView = null;
+        taskParams = null;
+        taskTitle = null;
+        taskProgress = null;
+        taskScroll = null;
+        taskLog = null;
+        taskPanelShown = false;
+    }
+
+    private boolean onTaskTouch(View v, MotionEvent e) {
+        if (taskParams == null || taskView == null) return false;
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                taskDownRawX = e.getRawX();
+                taskDownRawY = e.getRawY();
+                taskStartX = taskParams.x;
+                taskStartY = taskParams.y;
+                return true;
+            case MotionEvent.ACTION_MOVE: {
+                // 允许在屏幕内自由拖动，但不允许拖出屏幕：整窗留在屏内才能保证关闭按钮抓得到。
+                int maxX = Math.max(0, screenWidth - taskParams.width);
+                int maxY = getResources().getDisplayMetrics().heightPixels - UiKit.dp(this, 64);
+                taskParams.x = clamp(taskStartX + (int) (e.getRawX() - taskDownRawX), 0, maxX);
+                taskParams.y = clamp(taskStartY + (int) (e.getRawY() - taskDownRawY), 0, maxY);
+                try {
+                    windowManager.updateViewLayout(taskView, taskParams);
+                } catch (Throwable ignored) {
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_UP:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return value < min ? min : Math.min(value, max);
+    }
+
+    /** 把一条任务事件追加到浮窗：plan=思考，step=动作，其余按级别着色。 */
+    private void appendTaskLog(TaskBus.Event event) {
+        if (taskLog == null) return;
+        TextView line = new TextView(this);
+        line.setTextSize(11f);
+        line.setTypeface(Typeface.MONOSPACE);
+        line.setTextColor(levelColor(event.level));
+        line.setPadding(0, UiKit.dp(this, 1), 0, UiKit.dp(this, 1));
+        line.setText(labelOf(event.tag) + event.message);
+        taskLog.addView(line);
+        while (taskLog.getChildCount() > 8) taskLog.removeViewAt(0);
+        if (taskScroll != null) taskScroll.post(() -> taskScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private static String labelOf(String tag) {
+        if ("plan".equals(tag)) return "思考  ";
+        if ("step".equals(tag)) return "动作  ";
+        return "任务  ";
+    }
+
+    private int levelColor(TaskBus.Level level) {
+        switch (level) {
+            case OK:
+                return getColor(R.color.ok);
+            case WARN:
+                return getColor(R.color.warn);
+            case ERROR:
+                return getColor(R.color.danger);
+            default:
+                return getColor(R.color.text_secondary);
+        }
+    }
+
     private void runFromPanel() {
         String goal = panelInput == null ? "" : panelInput.getText().toString().trim();
         if (goal.isEmpty()) {
@@ -327,6 +484,9 @@ public final class OverlayService extends Service implements TaskBus.Listener {
             return;
         }
         removePanel();
+        showTaskPanel();
+        if (taskTitle != null) taskTitle.setText(goal.length() > 18 ? goal.substring(0, 18) + "…" : goal);
+        if (taskLog != null) taskLog.removeAllViews();
         new Thread(() -> {
             try {
                 AgentRuntimeHolder.run(goal);
@@ -338,16 +498,33 @@ public final class OverlayService extends Service implements TaskBus.Listener {
 
     @Override
     public void onEvent(TaskBus.Event event) {
+        TaskBus bus = TaskBus.get();
         if (panelState != null && panelShown) {
-            panelState.setText(TaskBus.get().progressText());
+            panelState.setText(bus.progressText());
         }
         if (bubbleBadge != null) {
-            TaskBus bus = TaskBus.get();
             if (bus.running()) {
                 bubbleBadge.setVisibility(View.VISIBLE);
                 bubbleBadge.setText(bus.stepIndex() + "");
             } else {
                 bubbleBadge.setVisibility(View.GONE);
+            }
+        }
+        // 不管任务从哪发起（主界面 / 浮窗面板 / adb），只要事件流在跑就叠出任务浮窗，
+        // 用户始终能看到规划与步骤，而不是盯着一块不动的界面猜 Agent 在干什么。
+        if (!taskPanelShown && ("plan".equals(event.tag) || "task".equals(event.tag) || bus.running())) {
+            showTaskPanel();
+        }
+        if (taskPanelShown) {
+            if (taskProgress != null) {
+                // 规划阶段总线状态还是 IDLE，直接显示「空闲」会误导成没在干活。
+                taskProgress.setText(bus.running() || !"plan".equals(event.tag)
+                        ? bus.progressText() : "思考中…");
+            }
+            appendTaskLog(event);
+            if (!bus.running() && "task".equals(event.tag)) {
+                hideHandler.removeCallbacks(hideTaskPanel);
+                hideHandler.postDelayed(hideTaskPanel, 5000);
             }
         }
         if (event.level == TaskBus.Level.ERROR) {

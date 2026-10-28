@@ -221,6 +221,11 @@
                     android:id="@+id/chip_overlay"
                     style="@style/Chip"
                     android:text="悬浮球" />
+
+                <TextView
+                    android:id="@+id/chip_perms"
+                    style="@style/Chip"
+                    android:text="权限申请" />
             </LinearLayout>
         </HorizontalScrollView>
 

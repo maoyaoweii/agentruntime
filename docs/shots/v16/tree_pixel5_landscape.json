@@ -339,7 +339,7 @@
    "x": 1971,
    "y": 101,
    "w": 660,
-   "h": 328,
+   "h": 369,
    "id": "status_row"
   },
   {
@@ -432,7 +432,7 @@
    "y": 347,
    "w": 660,
    "h": 41,
-   "text": "skills 23",
+   "text": "skills 24",
    "fg": "#FF6C7484",
    "size": 33,
    "padL": 0,
@@ -446,6 +446,20 @@
    "y": 388,
    "w": 660,
    "h": 41,
+   "text": "perm 0\/2",
+   "fg": "#FFE3B341",
+   "size": 33,
+   "padL": 0,
+   "padT": 0,
+   "gravity": 8388659,
+   "lines": 1
+  },
+  {
+   "cls": "TextView",
+   "x": 1971,
+   "y": 429,
+   "w": 660,
+   "h": 41,
    "text": "rom robolectric",
    "fg": "#FF6C7484",
    "size": 33,
@@ -457,7 +471,7 @@
   {
    "cls": "View",
    "x": 1971,
-   "y": 447,
+   "y": 488,
    "w": 660,
    "h": 3,
    "bg": "#FF1B1E24"
@@ -465,7 +479,7 @@
   {
    "cls": "TextView",
    "x": 1971,
-   "y": 486,
+   "y": 527,
    "w": 5,
    "h": 35,
    "text": "QUICK",
@@ -479,21 +493,21 @@
   {
    "cls": "HorizontalScrollView",
    "x": 1971,
-   "y": 545,
+   "y": 586,
    "w": 660,
    "h": 77
   },
   {
    "cls": "LinearLayout",
    "x": 1971,
-   "y": 545,
+   "y": 586,
    "w": 188,
    "h": 77
   },
   {
    "cls": "TextView",
    "x": 1971,
-   "y": 545,
+   "y": 586,
    "w": 70,
    "h": 77,
    "id": "chip_observe",
@@ -509,7 +523,7 @@
   {
    "cls": "TextView",
    "x": 2065,
-   "y": 545,
+   "y": 586,
    "w": 70,
    "h": 77,
    "id": "chip_screenshot",
@@ -525,21 +539,21 @@
   {
    "cls": "HorizontalScrollView",
    "x": 1971,
-   "y": 640,
+   "y": 681,
    "w": 660,
    "h": 77
   },
   {
    "cls": "LinearLayout",
    "x": 1971,
-   "y": 640,
+   "y": 681,
    "w": 187,
    "h": 77
   },
   {
    "cls": "TextView",
    "x": 1971,
-   "y": 640,
+   "y": 681,
    "w": 70,
    "h": 77,
    "id": "chip_smoke",
@@ -555,7 +569,7 @@
   {
    "cls": "TextView",
    "x": 2065,
-   "y": 640,
+   "y": 681,
    "w": 69,
    "h": 77,
    "id": "chip_skills",
@@ -571,7 +585,7 @@
   {
    "cls": "TextView",
    "x": 1971,
-   "y": 735,
+   "y": 776,
    "w": 69,
    "h": 77,
    "id": "chip_overlay",
@@ -585,9 +599,25 @@
    "lines": 1
   },
   {
+   "cls": "TextView",
+   "x": 1971,
+   "y": 871,
+   "w": 70,
+   "h": 77,
+   "id": "chip_perms",
+   "bg": "#FF121418",
+   "text": "权限申请",
+   "fg": "#FF9AA3B2",
+   "size": 35,
+   "padL": 33,
+   "padT": 18,
+   "gravity": 8388659,
+   "lines": 1
+  },
+  {
    "cls": "View",
    "x": 1971,
-   "y": 854,
+   "y": 990,
    "w": 660,
    "h": 3,
    "bg": "#FF1B1E24"
@@ -595,7 +625,7 @@
   {
    "cls": "TextView",
    "x": 1971,
-   "y": 887,
+   "y": 1023,
    "w": 660,
    "h": 89,
    "id": "btn_console",
@@ -610,9 +640,9 @@
   {
    "cls": "TextView",
    "x": 1971,
-   "y": 976,
+   "y": 1112,
    "w": 660,
-   "h": 89,
+   "h": 79,
    "id": "btn_skills",
    "text": "› 技能库",
    "fg": "#FF9AA3B2",
@@ -625,26 +655,11 @@
   {
    "cls": "TextView",
    "x": 1971,
-   "y": 1065,
-   "w": 660,
-   "h": 89,
-   "id": "btn_settings_top",
-   "text": "› 设置",
-   "fg": "#FF9AA3B2",
-   "size": 36,
-   "padL": 30,
-   "padT": 24,
-   "gravity": 8388659,
-   "lines": 1
-  },
-  {
-   "cls": "TextView",
-   "x": 1971,
-   "y": 1154,
+   "y": 1191,
    "w": 660,
    "h": 41,
    "id": "tv_version",
-   "text": "v1.6.0  api30  act40  sk23",
+   "text": "v1.6.0  api30  act40  sk24",
    "fg": "#FF6C7484",
    "size": 32,
    "padL": 0,

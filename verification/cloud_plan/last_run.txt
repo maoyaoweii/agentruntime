@@ -1,0 +1,114 @@
+  G02_chat_file  status=SUCCESS  wall=44s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec agent_test.open_chat     OK                 ok=True
+     exec agent_test.send_file     OK                 ok=True
+     exec None                     None               ok=True
+     exec None                     None               ok=True
+  G05_admin_text  status=FAILED  wall=73s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=0
+     exec sys.observe              OK                 ok=True
+     exec web.find_text            NOT_FOUND          ok=False
+  G06_user2_file  status=SUCCESS  wall=27s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=1
+     exec None                     None               ok=True
+     exec agent_test.open_chat     OK                 ok=True
+     exec agent_test.send_file     OK                 ok=True
+     exec agent_test.send_text     OK                 ok=True
+     exec None                     None               ok=True
+     exec None                     None               ok=True
+  G05_admin_text  status=SUCCESS  wall=63s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec agent_test.open_chat     OK                 ok=True
+     exec agent_test.send_text     OK                 ok=True
+     exec None                     None               ok=True
+     exec None                     None               ok=True
+  G01_chat_text  status=SUCCESS  wall=42s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=0
+     exec agent_test.open_chat     OK                 ok=True
+     exec agent_test.send_text     OK                 ok=True
+  G02_chat_file  status=SUCCESS  wall=47s  cloud_calls=3  intent_hits=0  compound_skips=3  rule=0
+     exec agent_test.open_chat     OK                 ok=True
+     exec agent_test.send_file     OK                 ok=True
+  G03_read_net  status=SUCCESS  wall=24s  cloud_calls=4  intent_hits=0  compound_skips=4  rule=0
+     exec agent_test.open_settings OK                 ok=True
+     exec agent_test.read_wifi     OK                 ok=True
+     exec sys.observe              OK                 ok=True
+  G05_admin_text  status=SUCCESS  wall=55s  cloud_calls=5  intent_hits=0  compound_skips=5  rule=0
+     exec agent_test.open_chat     OK                 ok=True
+     exec agent_test.send_text     OK                 ok=True
+  G06_user2_file  status=SUCCESS  wall=33s  cloud_calls=6  intent_hits=0  compound_skips=6  rule=0
+     exec agent_test.open_chat     OK                 ok=True
+     exec agent_test.send_file     OK                 ok=True
+  N01_notes_note  status=FAILED  wall=17s  cloud_calls=6  intent_hits=0  compound_skips=6  rule=1
+     exec notes.create_note        NODE_NOT_FOUND     ok=False
+  N01_memo_new  status=FAILED  wall=50s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec sys.ui_launch_tap        VISION_UNAVAILABLE ok=False
+  N01_memo_new  status=SUCCESS  wall=28s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N02_clock_stop  status=FAILED  wall=62s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=0
+     exec sys.open_clock           APP_NOT_ALLOWED    ok=False
+  N03_calendar_day  status=SUCCESS  wall=23s  cloud_calls=3  intent_hits=0  compound_skips=3  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+  N02_clock_stop  status=SUCCESS  wall=53s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N01_memo_new  status=SUCCESS  wall=93s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec None                     None               ok=True
+  N02_clock_stop  status=SUCCESS  wall=88s  cloud_calls=3  intent_hits=0  compound_skips=3  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N03_calendar_day  status=FAILED  wall=33s  cloud_calls=4  intent_hits=0  compound_skips=4  rule=0
+     exec sys.ui_launch_tap        VISION_UNAVAILABLE ok=False
+  N01_memo_new  status=SUCCESS  wall=95s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+  N02_clock_stop  status=POSTCONDITION_FAILED  wall=57s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec None                     None               ok=False
+  N03_calendar_day  status=SUCCESS  wall=134s  cloud_calls=3  intent_hits=0  compound_skips=3  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec None                     None               ok=True
+     exec None                     None               ok=True
+  N02_clock_stop  status=SUCCESS  wall=59s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec None                     None               ok=True
+  N01_memo_new  status=SUCCESS  wall=44s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec None                     None               ok=True
+  N02_clock_stop  status=SUCCESS  wall=44s  cloud_calls=3  intent_hits=0  compound_skips=3  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N03_calendar_day  status=FAILED  wall=43s  cloud_calls=4  intent_hits=0  compound_skips=4  rule=0
+     exec sys.ui_launch_tap        VISION_UNAVAILABLE ok=False
+  N01_memo_new  status=SUCCESS  wall=25s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N02_clock_stop  status=ERROR  wall=92s  cloud_calls=None  intent_hits=None  compound_skips=None  rule=None
+  N03_calendar_day  status=ERROR  wall=96s  cloud_calls=None  intent_hits=None  compound_skips=None  rule=None
+  N02_clock_stop  status=SUCCESS  wall=98s  cloud_calls=2  intent_hits=0  compound_skips=4  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N03_calendar_day  status=FAILED  wall=144s  cloud_calls=3  intent_hits=0  compound_skips=5  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        WAIT_TIMEOUT       ok=False
+  N03_calendar_day  status=FAILED  wall=72s  cloud_calls=4  intent_hits=0  compound_skips=6  rule=0
+     exec sys.ui_launch_tap        WAIT_TIMEOUT       ok=False
+  N02_clock_stop  status=SUCCESS  wall=65s  cloud_calls=5  intent_hits=0  compound_skips=7  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec None                     None               ok=True
+  N03_calendar_day  status=ERROR  wall=95s  cloud_calls=None  intent_hits=None  compound_skips=None  rule=None
+  N01_memo_new  status=FAILED  wall=107s  cloud_calls=6  intent_hits=0  compound_skips=9  rule=0
+     exec sys.ui_launch_tap        WAIT_TIMEOUT       ok=False
+  N02_clock_stop  status=SUCCESS  wall=34s  cloud_calls=7  intent_hits=0  compound_skips=10  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N01_memo_new  status=SUCCESS  wall=17s  cloud_calls=1  intent_hits=0  compound_skips=1  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+  N01_memo_new  status=SUCCESS  wall=27s  cloud_calls=2  intent_hits=0  compound_skips=2  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec sys.ui_launch_tap        OK                 ok=True
+  N02_clock_stop  status=SUCCESS  wall=21s  cloud_calls=3  intent_hits=0  compound_skips=3  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True
+     exec None                     None               ok=True
+  N03_calendar_day  status=SUCCESS  wall=109s  cloud_calls=4  intent_hits=0  compound_skips=4  rule=0
+     exec sys.ui_launch_tap        OK                 ok=True

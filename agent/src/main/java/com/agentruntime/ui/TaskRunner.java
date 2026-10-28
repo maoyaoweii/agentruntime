@@ -42,7 +42,15 @@ public final class TaskRunner {
             bus.error("plan", "规划失败：" + e.getMessage());
             throw e;
         }
-        bus.info("plan", "规划完成 → " + task.taskId);
+        bus.info("plan", "规划完成 → " + task.taskId + " · " + task.steps.size() + " 步");
+        // 把「想出来的计划」摊给用户看：只报 taskId 的话，浮窗上只有一串编号，
+        // 看不出 Agent 到底打算调哪些技能。
+        StringBuilder skills = new StringBuilder();
+        for (TaskSpec.TaskStep step : task.steps) {
+            if (skills.length() > 0) skills.append(" → ");
+            skills.append(step.skillId);
+        }
+        if (skills.length() > 0) bus.info("plan", "计划 " + skills);
         return app.agentRuntime().runTask(task, autoConfirm, allowReplan, bus.runtimeListener());
     }
 

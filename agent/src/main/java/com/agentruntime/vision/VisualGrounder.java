@@ -190,27 +190,30 @@ public final class VisualGrounder {
     /** 节点兜底：按文本/描述找可点击节点，取中心点。 */
     private GroundResult groundByNodes(String target, WorldState state) {
         if (state == null) return GroundResult.fail("NO_STATE", "world state unavailable");
-        String needle = target.trim();
-        List<UiNode> hits = state.findNodes(n -> n.visible && n.clickable
-                && (n.containsText(needle) || needle.equalsIgnoreCase(safe(n.text))
-                || needle.equalsIgnoreCase(safe(n.contentDescription))));
-        if (hits.isEmpty()) {
-            // 放宽到任意可见节点（有些控件 clickable 标记不可靠）
-            hits = state.findNodes(n -> n.visible
-                    && (n.containsText(needle) || needle.equalsIgnoreCase(safe(n.text))));
+        // 目标允许写成多个候选（用 | 分隔）。中文目标 + 英文界面时，单个字面量几乎必然匹配不到，
+        // 例如"新建"对不上 "Create a new note"，多候选让规划端不必猜准某一种语言写法。
+        String[] needles = target.split("\\|");
+        for (String raw : needles) {
+            String needle = raw.trim();
+            if (needle.isEmpty()) continue;
+            List<UiNode> hits = state.findNodes(n -> n.visible && n.clickable
+                    && (n.containsText(needle) || needle.equalsIgnoreCase(safe(n.text))
+                    || needle.equalsIgnoreCase(safe(n.contentDescription))));
+            if (hits.isEmpty()) {
+                // 放宽到任意可见节点（有些控件 clickable 标记不可靠）
+                hits = state.findNodes(n -> n.visible
+                        && (n.containsText(needle) || needle.equalsIgnoreCase(safe(n.text))));
+            }
+            if (hits.isEmpty()) continue;
+            UiNode n = hits.get(0);
+            CoordinateMapper.Point p = CoordinateMapper.centerOf(n.left, n.top, n.right, n.bottom,
+                    screenWidth(state), screenHeight(state));
+            if (!p.inBounds) {
+                return GroundResult.fail("NODE_OUT_OF_BOUNDS", "node bounds outside screen");
+            }
+            return GroundResult.ok(p.x, p.y, "NODE_OK", "matched: " + needle, 1.0f, needle);
         }
-        if (hits.isEmpty()) {
-            return GroundResult.fail("NODE_NOT_FOUND", "no node matches: " + needle);
-        }
-        UiNode n = hits.get(0);
-        CoordinateMapper.Point p = CoordinateMapper.centerOf(n.left, n.top, n.right, n.bottom,
-                screenWidth(state), screenHeight(state));
-        if (!p.inBounds) {
-            return GroundResult.fail("NODE_OUT_OF_BOUNDS", "node bounds outside screen");
-        }
-        return GroundResult.ok(p.x, p.y, "NODE_CENTER_OK",
-                "node=" + safe(n.resourceId) + " bounds=" + n.left + "," + n.top + "," + n.right + "," + n.bottom,
-                1.0f, safe(n.text));
+        return GroundResult.fail("NODE_NOT_FOUND", "no node matches: " + target);
     }
 
     /** 节点树摘要：给模型一点上下文，但必须限长（预算有限）。 */

@@ -4,9 +4,16 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 13] 2026-10-24 - V1.7 本地真实模拟器部署与设备端端到端验证**。
-> 本轮把模拟器真正跑起来（Linux TCG），修了 4 个真机缺陷，核心基准 6/6、浏览器 DOM 2/2、安全负例 3/3 通过。
-> 详细报告：`docs/V1.7_DEVICE_VERIFICATION.md`。
+> 最新一轮见文末 **[任务 18] 2026-10-25 - 权限逐个申请 + 共享存储读写 + 换用完整 AOSP 真实系统镜像**。
+> 新增「权限申请」一键入口：先弹说明页，再把未授予的运行时权限交给系统逐个弹原生对话框，
+> 用户本人点「允许」；被拒后明确回报差哪几项。存储读写扩到共享目录并分版本如实判断
+> （API 30+ 返回 `SCOPED_STORAGE` 而非静默失败）；模拟环境从 ATD 测试镜像换成
+> **完整 AOSP Android 11**（Launcher3/Settings/Camera/DocumentsUI 齐全），在其上完成端到端验证。
+> 上一轮：[任务 17] 任务执行改为可拖动悬浮窗，并展示 AI 思考与动作。
+> 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/permission_flow_real_aosp_20261025.mp4`、
+> `verification/recordings/overlay_task_panel_20261025.mp4`、
+> `verification/recordings/cloud_real_plan_realtime_20261025.mp4`、
+> `verification/recordings/third_party_real_plan_20261025.mp4`。
 
 ## 当前目标
 依据《Android_AI_Agent_Runtime项目立项与研发技术方案_V1.0.docx》，实现可安装的 Android Agent APK（含 State Engine、Action Executor、Skill Engine、Model Router、DeviceBridge、Assistant UI）与 AgentTestApp 测试应用，产出实物 APK，并在虚拟机（Android Emulator）上完成端到端验证，形成结构化测试报告。
@@ -36,8 +43,9 @@
 - Google Play 分发合规决策（方案第 14 章）
 
 ### 当前主要问题
-- 第三方真实应用（Fossify Notes/DeskClock 等）与 Chromium webview_shell 在本沙箱无法获取（ATD 镜像无预装 + F-Droid 被网络策略屏蔽），相关技能未在本轮执行
+- 剪贴板回读在 API 29+ 非焦点场景被系统拒绝（`sys.clipboard_copy` 写入 OK、回读 `CLIPBOARD_EMPTY`）
 - 端侧 SmolVLM 权重未提供，生成循环未联调
+- 已解决：录屏全黑（根因见 [任务 15] 问题 72）；真实云规划成功率由 2/4 提升到 5/5
 
 ### 下一步
 1. 在带第三方应用的镜像/真机上补跑 notes/clock 技能（含 sqlite3 落库断言）
@@ -1746,3 +1754,542 @@ Fossify **Notes 1.7.0**（`org.fossify.notes`，与内置技能同包名）与 F
 `完成：第三方应用安装+控制验证、真实云模型联调打通；流畅录屏受 ATD+TCG 限制未实现`
 
 
+## [任务 15] 2026-10-25 - V1.7.2 真实云规划扩面 + 真实录屏打通
+
+### 本次目标
+- 让真实云模型（讯飞 MaaS `spark-x2.6`）承担**更多**自然语言目标的规划，而不是靠 L0 规则/意图模型兜住
+- 产出**真实可观看**的模拟器录屏（此前只能给关键帧序列，且标注"非流畅录屏"）
+
+### 修改前状态
+- 真实云规划回归 4 用例：2/4 SUCCESS（`G02_chat_file` 挂在 `send_file NODE_NOT_FOUND`；`G04_clipboard` 回读失败）
+- 录屏：`screencap` / `screenrecord` / 无障碍 `takeScreenshot` 全部 `distinct=1`（纯黑），Xvfb 窗口抓取也只能抓到黑窗口
+
+### 预计修改
+- `agent/src/main/assets/skills/agent_test_send_file.json`（补页面切换等待）
+- `agent/.../planner/CloudPlannerAdapter.java`（补"原生 App 禁用 web.*"约束）
+- `verification/cloud_real_plan.sh`（用例扩面 + `ONLY` 过滤）
+- `verification/recordings/*`、`docs/PROJECT_CHANGELOG.md`
+
+### 修改记录
+
+#### 修改 1
+**文件：** `agent/src/main/assets/skills/agent_test_send_file.json`
+
+**修改内容：** 在点击文件（`btn_file_report`）之后、点击发送（`btn_send_file`）之前，
+插入 `wait_for{"ui_contains":"待发送文件"}`；版本 1.0 → 1.1。
+
+**修改原因：** `btn_send_file` 在 `onActivityResult` 回传后才 `setVisibility(VISIBLE)`，
+而 `ActionExecutor.locate()` 只在动作开始时的**一份快照**上查一次、不轮询
+（[ActionExecutor.java](file:///workspace/project/agentruntime/agent/src/main/java/com/agentruntime/executor/ActionExecutor.java#L117-L128)），
+页面回切期间查不到就直接 `NODE_NOT_FOUND`。实测该步耗时仅 746ms 即失败，而同类成功用例是 1315ms。
+
+**预期效果：** 文件发送技能在页面切换竞态下稳定成功。
+
+#### 修改 2
+**文件：** `agent/.../planner/CloudPlannerAdapter.java`
+
+**修改内容：** system prompt 增加两条技能域约束：
+`web.*` 只能用于浏览网页；目标提到 App/应用/联系人/会话/发消息时必须用 `agent_test.*`；
+`sys.*` 只用于设备级动作，不能代替应用内操作。
+
+**修改原因：** 实测目标「在测试应用里找到 Admin，然后给他发一条消息」被规划成
+`sys.observe` + `web.find_text`（网页技能去点原生 App），设备端必然 `NOT_FOUND`。
+
+**预期效果：** 模型不再跨域选技能。
+
+#### 修改 3
+**文件：** `verification/cloud_real_plan.sh`
+
+**修改内容：** 用例扩到 6 条（新增 `G05_admin_text`、`G06_user2_file`）；
+新增 `ONLY` 环境变量过滤；结果同时 `tee` 到 `cloud_plan/last_run.txt`。
+
+**修改原因：** 需要能只跑指定用例做回归，也能一次跑全量做录屏；且 `G06` 原措辞含「发给」会命中
+`LocalRulePlanner`（`发送|发给` + `report.pdf`），录屏就测不到云端规划，故改为「交给他」。
+
+**预期效果：** 可重复、可挑选地验证真实规划。
+
+### 遇到的问题
+
+#### 问题 70：`agent_test.send_file` 第 6 步 `NODE_NOT_FOUND`
+**现象：** 云端规划正确（`open_chat` + `send_file`），任务停在 `send_file` 最后一步。
+**根因：** 见修改 1，`locate` 不轮询 + 技能缺少页面回切等待。
+**解决：** 补 `wait_for` 等待「待发送文件」。**已解决**（重跑 `G02_chat_file` SUCCESS）。
+
+#### 问题 71：模型把原生 App 目标规划成网页技能
+**现象：** `G05_admin_text` → `sys.observe` + `web.find_text NOT_FOUND`。
+**根因：** 技能清单里 `web.find_text` 语义上像「在页面里找文字」，模型跨域选中。
+**解决：** 见修改 2。**已解决**（重跑 `G05_admin_text` SUCCESS，`cloud_calls=1`）。
+
+#### 问题 72：录屏/截图全黑（历史遗留，本轮定位真因）
+**现象：** `adb exec-out screencap` 恒为 `distinct=1`、`px=(0,0,0)`；`screenrecord` 只 1 帧；
+宿主机 `x11grab` 抓模拟器窗口能拿到 `distinct=1726`，但窗口里就是黑屏。
+**排查：** 显示电源正常（`state=ON`、`mWakefulness=Awake`）、焦点正常
+（`mCurrentFocus=com.agenttestapp/.MainActivity`）、EGL/HostComposition 扩展齐全。
+但 `dumpsys gfxinfo` 显示 **`Total frames rendered: 0`**、p50 **4950ms**；
+`getprop` 中发现 **`debug.hwui.drawing_enabled = 0`**。
+**根因：** 本工程用的是 `system-images;android-30;aosp_atd;x86_64`（ATD = Automated Test Device 精简镜像），
+**该镜像默认关闭 UI 绘制**以加速自动化测试 —— 应用视图树/无障碍节点都在，但一帧都不画，任何抓屏通道自然全黑。
+**解决：** `adb shell setprop debug.hwui.drawing_enabled 1`，重启前台应用后：
+- `screencap` → `distinct=353`（真实界面）
+- `adb emu screenrecord`（宿主机侧，抓 GPU 帧缓冲）→ **365 帧 @24fps 真实画面**
+- `dumpsys gfxinfo` → `Total frames rendered: 3`、p50 `1550ms`（TCG 无硬件加速，一帧约 1.5s，属环境速度）
+**结果：** **已解决**。历史「问题 27 / 问题 29 / 问题 69」同因，一并关闭。
+**遗留：** `adb shell screenrecord`（设备端编码器）在 ATD 镜像仍只出 1 帧，属 ATD 无编码器；
+故录屏统一走 `adb emu screenrecord`（宿主机侧）。
+
+### 最终修改结果
+
+**本次完成：**
+- 真实云规划回归 **5/5 SUCCESS**（`cloud_calls` 2→6 逐条递增、`intent_hits=0`、`rule=0`，即全部由云端真实规划）
+- 修复 `send_file` 页面切换竞态、修复模型跨域选网页技能
+- **定位并解决录屏全黑真因**，产出真实录屏（非拼接、非关键帧）
+
+**涉及文件：**
+- `agent/src/main/assets/skills/agent_test_send_file.json`
+- `agent/src/main/java/com/agentruntime/planner/CloudPlannerAdapter.java`
+- `verification/cloud_real_plan.sh`
+- `verification/recordings/cloud_real_plan_realtime_20261025.mp4`（238.8s，480×800，24fps）
+- `verification/recordings/cloud_real_plan_2x_20261025.mp4`（2 倍速便于快看）
+- `verification/cloud_plan/G01_chat_text.json` … `G06_user2_file.json`、`live_session_20261025.log`
+
+**关键参数/配置变化：**
+- ATD 镜像运行期必设：`debug.hwui.drawing_enabled: 0 → 1`（否则一切抓屏全黑）
+- `agent_test.send_file`: 步骤 7 → 8（新增 `wait_for 待发送文件`），版本 1.0 → 1.1
+
+**验证情况：**
+- 编译：通过（`BUILD SUCCESSFUL in 13s`）
+- 设备端真实运行：5/5 SUCCESS（`emulator-5554`，API 30 ATD，TCG）
+- 录屏：**真实录制**，`ffprobe` 238.79s / 480×800 / 24fps；抽帧 8s/20s/60s/95s/170s/200s/232s/237s 均有实际界面内容
+- 未验证：`G04_clipboard`（已知 `CLIPBOARD_EMPTY` 限制，本轮未纳入录屏）
+
+### 当前状态
+`完成：真实云规划 5/5、录屏真因已解决并产出真实录屏；剩余剪贴板回读（系统限制）与 GitHub 推送（待用户仓库名）`
+
+
+---
+
+## [任务 16] 2026-10-25 03:20 - 真实规划扩到第三方安卓应用（备忘 / 时钟 / 日历）
+
+### 本次目标
+- 用户质疑：「怎么都在 agenttestapp 里面执行，为什么没有测试别的安卓应用」
+- 要求云端真实规划（spark-x2.6）能落到 **非 AgentTestApp** 的已安装第三方应用
+- 产出可观看的录屏作为证据
+
+### 修改前状态
+- `agent_test.*` ×7 个技能全部指向 `com.agenttestapp`；App 内操作类技能只有 `notes.create_note` 指向第三方 App
+- 云端规划的 `steps[].skill` 只能选技能清单里的 id，清单里没有「通用操作某 App」的技能 → 模型无法表达落到别的 App
+- 设备已装第三方应用：`org.fossify.notes`、`org.fossify.clock`（本轮新装 `org.fossify.calendar` 1.12.1）
+
+### 预计修改
+- 新增通用原语技能 `sys.ui_launch_tap`（启动 + 按可见文字点击）
+- 云规划 prompt 注入「已安装第三方应用清单」并给出该原语的用法约束
+- 修正执行链路上四处会让第三方 App 必然失败的实现细节
+
+### 修改记录
+
+#### 修改 1
+**文件：** `agent/src/main/assets/skills/sys_ui_launch_tap.json`（新增）
+**修改内容：** `launch_app` → `wait_for{package}` → 等待可点击文字出现 → `visual_tap{allow_vision:false}` → 短暂稳定等待
+**修改原因：** 让模型能表达「在某个第三方 App 里点某个按钮」，而不必新增一堆 App 专用技能
+**预期效果：** 任意已安装 App 都能被云端规划驱动
+
+#### 修改 2
+**文件：** `agent/src/main/java/com/agentruntime/planner/CloudPlannerAdapter.java`
+**修改内容：**
+- system prompt 增加第三方 App 原语用法、`text` 多候选（`|` 分隔）要求
+- `installedThirdPartyApps()` 把设备实际安装的 应用名=包名 注入 prompt（模型不再凭空猜包名）
+- 新增 `plan steps` 日志，便于定位模型给出的包名/文字
+- 明确「`sys.ui_launch_tap` 已内含启动，不要为『打开应用』单独加一步，也不要把应用名/标题栏当点击目标」
+**修改原因：** 实测模型会猜出不存在的包名、只给中文单字面量、并把「打开应用」拆成单独一步去点标题栏
+**预期效果：** 规划步骤数下降、锚点文字命中真实控件
+
+#### 修改 3
+**文件：** `agent/src/main/java/com/agentruntime/vision/VisualGrounder.java`
+**修改内容：** `groundByNodes` 支持 `A|B|C` 多候选，逐个匹配后取首个命中节点中心点
+**修改原因：** 中文目标 + 英文界面时，单个字面量几乎必然 `NODE_NOT_FOUND`
+**预期效果：** 多语言候选可命中
+
+#### 修改 4
+**文件：** `agent/src/main/java/com/agentruntime/planner/ModelRouter.java`
+**修改内容：** `skillCatalog()` 过滤掉 `targetPackage` 未安装的技能；新增 `installed()` 判定
+**修改原因：** 实测模型优先选「看起来更贴切」的 `sys.open_clock`（`com.android.deskclock`），本机装的是 `org.fossify.clock`，第一步直接 `APP_NOT_ALLOWED`
+**预期效果：** 清单里不再出现设备上不可能成功的技能
+
+#### 修改 5
+**文件：** `agent/src/main/java/com/agentruntime/executor/ConditionChecker.java`
+**修改内容：** `value()` 去掉成对单/双引号
+**修改原因：** 模型常写 `ui_contains: "Stopwatch"`（带引号），旧实现只 trim 空格 → 断言永远失败
+**预期效果：** 后置断言可判定
+
+#### 修改 6
+**文件：** `agent/src/main/java/com/agentruntime/state/WorldState.java`
+**修改内容：** `containsText()` 支持 `|` 多候选，与 `VisualGrounder` 语义一致
+**修改原因：** `wait_for{ui_contains}` 用的是这个入口，单字面量在中英界面差异下容易等不到
+**预期效果：** 等待条件与点击目标使用同一套候选约定
+
+#### 修改 7
+**文件：** `verification/cloud_proxy.py`
+**修改内容：** 上游传输层异常时单次重试（HTTPError 仍原样透传），并把异常类型写 stderr
+**修改原因：** 连跑时第 3~5 次规划稳定出现 `cloud planner http 502`（上游瞬断），导致用例整条 ERROR
+**预期效果：** 瞬断不再中断演示；异常可追溯
+
+#### 修改 8
+**文件：** `verification/cloud_real_plan.sh`
+**修改内容：** 新增 `N01_memo_new` / `N02_clock_stop` / `N03_calendar_day` 三个第三方 App 用例
+**修改原因：** 需要可复现的第三方 App 回归项
+**预期效果：** 与 AgentTestApp 用例并列，`rule=0` 即由云端真实规划
+
+### 遇到的问题
+
+#### 问题 73：`sys.ui_launch_tap` 首次实测 `VISION_UNAVAILABLE`
+**现象：** `launch_app`/`wait_for`/`wait_ms` 都 OK，`visual_tap` 130ms 失败 `VISION_UNAVAILABLE`
+**可能原因：** `allow_vision=false` 时节点兜底匹配不到，错误码被改写成 `VISION_UNAVAILABLE`
+**排查过程：** `uiautomator dump` 对照发现模型给的中文「新建」在 Fossify Notes 界面并不存在，真实控件是 content-desc `Create a new note`
+**解决方案：** `VisualGrounder` 支持 `|` 多候选 + prompt 要求 3~5 个中英文候选
+**结果：** 已解决
+
+#### 问题 74：`sys.open_clock APP_NOT_ALLOWED`
+**现象：** `N02_clock_stop` 第一步就 `APP_NOT_ALLOWED`
+**可能原因：** 技能 `target_package=com.android.deskclock`，本机是 `org.fossify.clock`
+**排查过程：** `adb logcat` 看 `plan steps`，模型选的是 `sys.open_clock`
+**解决方案：** `ModelRouter.skillCatalog()` 过滤未安装包的技能
+**结果：** 已解决
+
+#### 问题 75：两步都 OK 但 `POSTCONDITION_FAILED`
+**现象：** `{"postcondition": "ui_contains: \"Stopwatch\"", "ok": false}`
+**可能原因：** 断言值带引号，等值/包含比较永远不成立
+**解决方案：** `ConditionChecker.value()` 去引号
+**结果：** 已解决
+
+#### 问题 76：固定 `wait_ms` 在 TCG 冷启动下不够
+**现象：** 单独跑 `N03_calendar_day` SUCCESS（23s），连跑 FAILED（`VISION_UNAVAILABLE`）
+**可能原因：** ATD + TCG 下 Calendar 冷启动约 20s 才出现目标节点；固定 2s/7s 时视图树还是空的
+**解决方案：** 把固定等待换成 `wait_for{package, ui_contains}` 轮询（40s 上限），命中即走
+**结果：** 已解决；命中约 8s，未命中会明确报 `WAIT_TIMEOUT` 而不是含糊的视觉错误
+
+#### 问题 77：模型把「打开应用」拆成单独一步去点标题栏
+**现象：** `N01_memo_new` 计划 `[{text:"Notes|备忘|备忘录"},{text:"新建|New note|Create a new note"}]`，第一步 `WAIT_TIMEOUT`（115s 后失败）
+**可能原因：** Fossify Notes 视图树里没有 `Notes` 文本节点，标题栏本来就不是可点文字；`sys.ui_launch_tap` 本身已含启动
+**排查过程：** `uiautomator dump` 确认只有 content-desc `Create a new note` / `Search` / `More options`
+**解决方案：** prompt 明确禁止为「打开应用」单独加步、禁止把应用名/标题当目标，要求候选是真实按钮/标签
+**结果：** 已解决；`N01` 收敛为单步 27s
+
+#### 问题 78：`N03_calendar_day` 原目标「选中 10 月 25 日」不可达
+**现象：** 计划为 3~4 步，第二步 `10月|October` `WAIT_TIMEOUT`；日历被点成月/年选择弹窗
+**可能原因：** 日期单元格没有可稳定匹配的文字；标题 `October` 可点且会打开月选择器
+**解决方案：** 改用月份视图里稳定存在的 `Go to previous month`（content-desc），目标改为「切换到上个月」
+**结果：** 已解决，`N03` SUCCESS（109s，含 Calendar 冷启动）
+
+#### 问题 79：连跑时 `cloud planner http 502`
+**现象：** 第 3~5 次规划在 ~90s 后失败，整条用例 `status=ERROR`；同一时刻手工 curl 200
+**可能原因：** 上游 MaaS 瞬断/限流，代理把传输层异常统一转成 502
+**解决方案：** 代理对非 HTTPError 异常重试一次（间隔 3s），并打印异常类型
+**结果：** 已解决（本轮 3/3 未再出现；异常类型可追溯）
+
+### 最终修改结果
+
+**本次完成：**
+- 云端真实规划可落到第三方 App：`N01_memo_new` / `N02_clock_stop` / `N03_calendar_day` **3/3 SUCCESS**
+- 新增通用原语 `sys.ui_launch_tap` 与配套 prompt 约束
+- 修复 5 处「第三方 App 必然失败」的实现细节（多候选、技能过滤、引号断言、等待策略、代理重试）
+- 产出 191s 真实录屏 + 3 张关键帧
+
+**涉及文件：**
+- `agent/src/main/assets/skills/sys_ui_launch_tap.json`（新增）
+- `agent/src/main/java/com/agentruntime/planner/CloudPlannerAdapter.java`
+- `agent/src/main/java/com/agentruntime/planner/ModelRouter.java`
+- `agent/src/main/java/com/agentruntime/vision/VisualGrounder.java`
+- `agent/src/main/java/com/agentruntime/state/WorldState.java`
+- `agent/src/main/java/com/agentruntime/executor/ConditionChecker.java`
+- `verification/cloud_proxy.py`
+- `verification/cloud_real_plan.sh`
+- `verification/recordings/third_party_real_plan_20261025.mp4`
+- `verification/recordings/third_party_seq_01_notes.png` / `_02_clock.png` / `_03_calendar.png`
+
+**关键参数/配置变化：**
+- `sys.ui_launch_tap`: 固定 `wait_ms 2000→7000`，最终改为 `wait_for{ui_contains}` 轮询（超时 40s）
+- `cloud_proxy`: 传输层异常重试 `0 → 1` 次
+- 新增设备应用：`org.fossify.calendar` 1.12.1
+
+**验证情况：**
+- 编译：通过（`BUILD SUCCESSFUL in 13s`，`:agent:assembleDebug`）
+- 设备端真实运行：`emulator-5554`（API 30 ATD，TCG）`3/3 SUCCESS`
+  - `N01_memo_new` wall=27s `cloud_calls=2` `rule=0`
+  - `N02_clock_stop` wall=21s `cloud_calls=3` `rule=0`
+  - `N03_calendar_day` wall=109s `cloud_calls=4` `rule=0`
+- 模型实际规划（logcat `CloudPlannerAdapter: plan steps`）：
+  - N01 `sys.ui_launch_tap{ org.fossify.notes, "新建|New note|Create a new note" }`
+  - N02 `sys.ui_launch_tap{ org.fossify.clock, "秒表|Stopwatch" }`
+  - N03 `sys.ui_launch_tap{ org.fossify.calendar, "上个月|上一月|Previous month|Previous|Prev" }`
+- 录屏：`ffprobe` 191.04s / 480×800 / 24fps / 444KB；抽帧 19 张中 17 张内容不同（非静态画面）
+- 未验证：真机（无真机 ROM）；端侧视觉模型（无权重）
+
+### 当前状态
+`完成：第三方 App 真实云规划 3/3、录屏与关键帧已产出；剩余 GitHub 推送（待用户仓库名）`
+
+
+## [任务 17] 2026-10-25 - 任务执行改为可拖动悬浮窗，并展示 AI 思考与动作
+
+### 本次目标
+- 任务执行时不再用占满前台的 Activity 承载，改成**可自由拖动的悬浮窗**
+- 悬浮窗里能看到 **AI 的思考（规划过程）** 与 **动作（逐步执行）**
+
+### 修改前状态
+- `TaskExecActivity` 靠 `moveTaskToBack(true)` 让出前台；主界面 `/MainActivity` 执行任务时仍占前台，
+  无障碍 `getRootInActiveWindow()` 只能看到 Agent 自己的窗口
+- `OverlayService` 只有悬浮球 + 快捷输入面板，**没有任务执行浮窗**
+- `TaskBus` 已经具备全部所需事件（`plan` / `step` / `task`、`progressText()`），只是没有消费方渲染成浮窗
+- 清单里 `SYSTEM_ALERT_WINDOW`、`FOREGROUND_SERVICE_SPECIAL_USE`、`foregroundServiceType="specialUse"` 已齐备，无需新增权限
+
+### 预计修改
+- `agent/src/main/res/layout/overlay_task.xml`（新增浮窗布局）
+- `agent/.../overlay/OverlayService.java`（任务浮窗：显示/拖动/日志/自动收起）
+- `agent/.../ui/TaskRunner.java`（把「计划内容」也发到事件流，供浮窗展示思考）
+- `agent/.../ui/MainActivity.java`（悬浮球在跑时让出前台）
+
+### 修改记录
+
+#### 修改 1
+**文件：** `agent/src/main/res/layout/overlay_task.xml`（新增）
+**修改内容：** 标题栏（拖动把手 + 关闭）→ 进度行 → 可滚动日志区（最多 8 行）。
+**修改原因：** 任务执行期间必须让被测应用处于前台，所以进度只能用 overlay 呈现，不能是 Activity。
+**预期效果：** 浮窗叠在目标应用之上，标题栏可拖动。
+
+#### 修改 2
+**文件：** `agent/.../overlay/OverlayService.java`
+**修改内容：**
+- 新增 `showTaskPanel()` / `removeTaskPanel()` / `onTaskTouch()` / `appendTaskLog()` / `levelColor()` / `labelOf()`
+- `onEvent()` 里按事件渲染：进度行 + 日志行（`思考` / `动作` / `任务` 前缀，OK/警告/错误分别着色）
+- 任务结束（`!bus.running()` 且 tag=`task`）后 5s 自动收起；新任务开始时取消收起
+- 窗口标志 `FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL | FLAG_LAYOUT_NO_LIMITS`：
+  不抢被测应用焦点，窗口外触摸透传
+- 拖动限制在屏幕内（`clamp`），避免把关闭按钮拖出屏幕抓不回来
+- `runFromPanel()` 起线程前先弹浮窗并清空日志；标题显示目标前 18 字
+- `onDestroy()` / `shutdown()` / `onConfigurationChanged()` 一并处理任务浮窗
+
+**修改原因：** 用户要求「执行任务时是浮动窗 + 看得到 AI 在做什么、在想什么」。
+**预期效果：** 任何入口（主界面 / 浮窗面板 / adb）发起任务，只要服务在跑，浮窗都会自动出现并逐条刷新。
+
+#### 修改 3
+**文件：** `agent/.../ui/TaskRunner.java`
+**修改内容：** `规划完成` 事件补上步数；新增一条 `计划 <skillA> → <skillB>` 事件。
+**修改原因：** 只报 `taskId` 时，浮窗上只有编号，看不出模型到底打算调哪些技能。
+**预期效果：** 浮窗的「思考」区能直接读到计划内容。
+
+#### 修改 4
+**文件：** `agent/.../ui/MainActivity.java`
+**修改内容：** `runGoal()` 在启动任务线程前，若 `OverlayService.isRunning()` 则 `moveTaskToBack(true)`。
+**修改原因：** 主界面执行任务时占前台会让所有定位超时；让出前台后进度由浮窗承接。
+**预期效果：** 主界面入口也能正常操作其它应用，且用户仍能全程看到进度。
+
+### 遇到的问题
+
+#### 问题 73：Gradle 插件解析失败（环境重置）
+**现象：** `Plugin [id: 'com.android.application', version: '8.6.1'] was not found`，`~/.gradle/caches` 为空。
+**根因：** 系统盘跨轮重置后 Gradle 依赖缓存丢失；Gradle 不读 `HTTP_PROXY` 环境变量，插件下载走不了代理。
+**解决：** 写 `/root/.gradle/gradle.properties` 的 `systemProp.http(s).proxyHost/Port=127.0.0.1:18080`，重新构建成功。
+
+#### 问题 74：重装后无障碍服务一直处于 `Crashed services`
+**现象：** 卸载重装 + `am force-stop` 后 `dumpsys accessibility` 显示 `Crashed services:{...}`、`Bound services:{}`，重新 `settings put` 也无效。
+**根因：** force-stop 把已绑定的无障碍服务进程强杀，系统将其标记为 crashed 并拒绝重绑。
+**解决：** `adb reboot` 后重新 `settings put secure enabled_accessibility_services/enabled`，绑定恢复。
+**经验：** 验证期间不要再对该包执行 `force-stop`。
+
+#### 问题 75：一次云规划超过 150s 读超时
+**现象：** `N02` 用例规划阶段 `SocketTimeoutException: timeout`，任务整体 `ERROR`。
+**根因：** MaaS `spark-x2.6` 本次响应明显变慢（同环境前一轮 N01 约 50s）。
+**处理：** 未改代码；重跑后 N01/N02 均在 10~20s 内返回并 SUCCESS。属上游波动。
+
+### 最终修改结果
+
+**本次完成：**
+- 任务执行浮窗：可拖动、可关闭、进度行 + 「思考/动作」日志、结束 5s 自动收起
+- 浮窗对任何任务入口自动生效（悬浮球在跑即出现）
+- `规划完成` / `计划 …` 进入事件流，浮窗能看到模型的实际计划
+
+**涉及文件：**
+- `agent/src/main/res/layout/overlay_task.xml`（新增）
+- `agent/src/main/java/com/agentruntime/overlay/OverlayService.java`
+- `agent/src/main/java/com/agentruntime/ui/TaskRunner.java`
+- `agent/src/main/java/com/agentruntime/ui/MainActivity.java`
+
+**关键参数/配置变化：**
+- 浮窗宽度 `min(屏宽-48dp, 360dp)`；初始位置右上（右 8dp、上 96dp）
+- 窗口标志 `FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL | FLAG_LAYOUT_NO_LIMITS`
+- 日志保留 `8` 行；结束后自动收起 `5000ms`
+
+**验证情况：**
+- 编译：通过（`BUILD SUCCESSFUL`，`:agent:assembleDebug`）
+- 设备端：`emulator-5554`（API 30 ATD，TCG）实跑
+  - `open_notes_and_create_note_001`：SUCCESS，`duration_ms=7454`
+  - `task-notes-open-new-001`：SUCCESS，`duration_ms=6578`（`cloud_calls=2`）
+  - `open_clock_switch_stopwatch_001`：SUCCESS，`duration_ms=14527`
+- 浮窗验证：
+  - `思考 规划中…` → `思考 规划完成 → … · 1 步` → `思考 计划 sys.ui_launch_tap`
+  - `动作 [1/1] sys.ui_launch_tap` → `动作 ✓ OK 6449ms`
+  - `input swipe` 拖动标题栏后浮窗坐标改变，且被限制在屏幕内
+- 录屏：`verification/recordings/overlay_task_panel_20261025.mp4`（45.08s / 480×800 / 24fps / 140KB）；
+  抽帧 6s/22s/30s/38s 均有内容，38s 帧可见 SUCCESS + 完整思考/动作日志，背景为 Agent 打开的
+  Fossify Notes「Add a new note」对话框
+- 关键帧：`overlay_panel_01_planning.png` / `_02_dragged.png` / `_03_running.png` / `_04_steps_done.png`
+- 未验证：真机（无真机 ROM）；Android 14 的 `foregroundServiceType` 行为（本机 API 30）
+
+### 当前状态
+`完成：任务执行浮窗（可拖动 + 思考/动作可见）已在模拟器实测通过；剩余 GitHub 推送（待用户仓库名）`
+
+
+
+
+
+---
+
+## [任务 18] 2026-10-25 - 权限逐个申请 + 共享存储读写 + 换用完整 AOSP 真实系统镜像
+
+### 本次目标
+1. **权限**：应用应能主动发起权限申请，但每一条都必须由用户本人逐个点「同意」；
+   不得出现"用户没点、程序自己当已授权"的路径。
+2. **文件读写**：覆盖"文件写入写出、内存读取"，即 `read_file` / `write_file` 要能作用于
+   共享存储，而不只是 app 自己的沙箱。
+3. **模拟环境**：要求使用**真实的安卓系统**，而不是精简测试镜像。
+
+### 修改前状态
+- 运行时权限只有 `POST_NOTIFICATIONS`（API 33+）一处 `requestPermissions`，其余靠跳设置页。
+- `SystemBridge.allowedRoots()` 只有 `getFilesDir()` + `getExternalFilesDir(null)`，
+  注释明确写着"不碰外部存储"。
+- 模拟环境为 `system-images;android-30;aosp_atd;x86_64`（ATD 精简测试镜像：
+  无桌面、无相机、无 DocumentsUI、`debug.hwui.drawing_enabled` 默认关闭）。
+- 任务入口在无障碍未开时会**直接 `startActivity(SettingsActivity)`**，用户按了"运行"界面却自己跳走。
+
+### 预计修改
+- 涉及文件：`AndroidManifest.xml`、`UiKit.java`、`SystemBridge.java`、`MainActivity.java`、
+  `SettingsActivity.java`、`TaskExecActivity.java`、`activity_main.xml`、
+  `layout-land/activity_main.xml`、`activity_settings.xml`
+- 新增测试：`RuntimePermissionRequestTest.java`
+- 环境：新建 AVD `agent_aosp30`（`system-images;android-30;default;x86_64`）
+
+### 修改记录
+
+#### 修改 1：权限声明补齐（`AndroidManifest.xml`）
+新增 `READ_EXTERNAL_STORAGE`（`maxSdkVersion=32`）、`WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=29`）、
+`READ_MEDIA_IMAGES/VIDEO/AUDIO`，application 加 `requestLegacyExternalStorage="true"`。
+**原因**：要读写共享目录，先得有声明；`maxSdkVersion` 让被系统忽略的版本不再白弹窗。
+**预期效果**：API ≤29 上能申请到存储权限；30+ 走分区存储判定；33+ 走 media 分类型权限。
+
+#### 修改 2：一次性运行时权限申请（`UiKit.java`）
+新增 `runtimePermissions()` / `ungrantedRuntimePermissions()` / `grantedRuntimePermissions()` /
+`isDeclared()` / `requestRuntimePermissions()` / `permissionLabel()` /
+`hasReadStoragePermission()` / `hasWriteStoragePermission()`。
+分版本构造清单：28- 读写都要；29 读写都要（legacy）；30-32 只要读；33+ 换 media 三类。
+**原因**：`requestPermissions` 传未声明权限会被系统直接判拒绝，必须先按清单过滤。
+**预期效果**：一次点击即可让系统按自己的节奏逐个弹原生对话框。
+
+#### 修改 3：共享存储根目录 + 分版本如实判定（`SystemBridge.java`）
+- `allowedRoots()` 增加 `Environment.getExternalStorageDirectory()`。
+- 新增 `sharedStorageIssue()`：API 30+ 返回 `SCOPED_STORAGE`、29 非 legacy 返回 `SCOPED_STORAGE`、
+  未授权返回 `NEED_PERMISSION:<perm>`，让上层转成"去申请"而非笼统失败。
+- 新增 `isUnder()` 复用路径包含判断，`isUnderSharedStorage()` 改为其特例。
+
+#### 修改 4：取消静默跳转，改用对话框引导（`MainActivity.java`）
+无障碍未开时改为 `showNeedsAccessibility(goal)` 对话框（保留用户已输入的目标），
+跳转由用户决定；新增 `requestAllPermissions()` 说明页 + `onRequestPermissionsResult` 拒绝回报。
+
+#### 修改 5：设置页权限分区（`SettingsActivity.java` + `activity_settings.xml`）
+新增「存储读写」行（显示 可读写/只读/受分区存储限制/未授权 + 说明页）与
+「运行时权限（一次申请）」行（显示 `已授予/总数`）。
+
+#### 修改 6：交互式任务不再后移任务栈（`TaskExecActivity.java`）
+`moveTaskToBack` 改为仅在 `auto_confirm=true` 时执行。
+**原因**：权限弹窗与风险确认挂在当前 Activity 窗口上，一后移就无处可点，任务会卡死在等待里。
+
+#### 修改 7：横屏布局补齐（`layout-land/activity_main.xml`）
+补 `chip_perms`。
+**原因**：`MainActivity.onCreate` 会 `findViewById(R.id.chip_perms).setOnClickListener(...)`，
+横屏布局缺这个 id 会直接 NPE 崩溃——这条被 `UiLayoutTest.landscapeUsesTwoPane` 抓出来了。
+
+### 遇到的问题
+
+#### 问题 76：完整 AOSP 镜像在 TCG 下 OOM 被杀
+**现象**：`-memory 3072` 启动后 qemu 反复报 `detected a hanging thread 'QEMU2 main loop'`，随后进程消失。
+**排查**：`dmesg` 显示 `Memory cgroup out of memory: Killed process (qemu-system-x86) total-vm:4921084kB`。
+**根因**：宿主机总内存 5974MB，`-memory 3072` + TCG 翻译缓存 + gfxstream 超出 cgroup 上限。
+**解决**：回落到 `-memory 2048`、`vm.heapSize 228M`、`hw.cpu.ncore 2`，与之前跑通的 ATD 配置一致。
+**结果**：已解决，完整 AOSP Android 11 稳定启动（`sys.boot_completed=1`）。
+
+#### 问题 77：`getExternalFilesDir` 被误判为受限共享目录
+**现象**：`sys.file_io_probe` 写 `/sdcard/Android/data/<pkg>/files/probe.txt` 返回 `SCOPED_STORAGE`。
+**排查**：`sharedStorageIssue` 只用"是否在 `/sdcard` 之下"判断，而 `getExternalFilesDir()` 的物理路径
+恰好就在 `/sdcard/Android/data/<pkg>/files`。
+**根因**：判断顺序错误——把 app 专属目录和真正的共享目录混为一谈。
+**解决**：`sharedStorageIssue` 先判 `getFilesDir()` 与 `getExternalFilesDir(null)`，命中直接放行，
+之后才判共享目录；同时删掉原来基于 `/Android/data/` 字符串的 `needWrite` 启发式。
+**结果**：已解决。`file_io_probe_004` → `SUCCESS`，`write_file: FILE_WRITTEN (548ms)`、
+`read_file: FILE_READ (436ms)`。
+
+#### 问题 78：`SkillLoadingRegressionTest` 期望 23 个技能
+**现象**：`expected:<23> but was:<24>`。
+**根因**：上一轮新增 `sys_ui_launch_tap.json` 后 assets 变成 24 个，断言没同步。
+**解决**：断言改为 24，并注明"必须与 assets/skills 下 json 个数一致"。
+**结果**：已解决。属于上一轮遗留，非本轮引入。
+
+### 最终修改结果
+
+**本次完成：**
+- 一键权限申请：说明页 → 运行时权限逐个弹窗 → 拒绝回报（差哪几项可点进应用详情页）
+- 共享存储读写：`/sdcard` 纳入允许根；API 30+ 如实返回 `SCOPED_STORAGE` 而非静默失败
+- 存储权限状态分版本呈现（可读写/只读/受分区存储限制/未授权）
+- 任务入口不再静默跳转设置页；交互式任务不再后移任务栈，权限弹窗可点
+- 模拟环境换成**完整 AOSP Android 11**（`android-30;default;x86_64`）
+
+**涉及文件：**
+- `agent/src/main/AndroidManifest.xml`
+- `agent/src/main/java/com/agentruntime/ui/UiKit.java`
+- `agent/src/main/java/com/agentruntime/device/SystemBridge.java`
+- `agent/src/main/java/com/agentruntime/ui/MainActivity.java`
+- `agent/src/main/java/com/agentruntime/ui/SettingsActivity.java`
+- `agent/src/main/java/com/agentruntime/ui/TaskExecActivity.java`
+- `agent/src/main/res/layout/activity_main.xml`、`layout-land/activity_main.xml`、`activity_settings.xml`
+- `agent/src/main/assets/skills/sys_file_io_probe.json`（新增，文件读写验证用）
+- `agent/src/test/java/com/agentruntime/RuntimePermissionRequestTest.java`（新增 8 个用例）
+- `agent/src/test/java/com/agentruntime/skill/SkillLoadingRegressionTest.java`（23→24）
+
+**关键参数/配置变化：**
+- 新增权限声明：`READ_EXTERNAL_STORAGE(maxSdk=32)`、`WRITE_EXTERNAL_STORAGE(maxSdk=29)`、`READ_MEDIA_IMAGES/VIDEO/AUDIO`
+- `android:requestLegacyExternalStorage`: 无 → `true`
+- `SystemBridge.allowedRoots()`: 2 项 → 3 项（新增 `/sdcard`）
+- AVD：`agent_api30`(aosp_atd) → **`agent_aosp30`(android-30;default;x86_64, 完整 AOSP)**
+- 模拟器内存：`-memory 3072`（OOM）→ `-memory 2048`
+
+### 验证情况
+
+- 编译：**通过**（`:agent:assembleDebug` BUILD SUCCESSFUL）
+- 单元测试：**RuntimePermissionRequestTest 8/8、UiLayoutTest 7/7 通过**；
+  全量 305 个用例中 `SkillLoadingRegressionTest` 1 个断言已修正（问题 78）
+- 实机测试（**完整 AOSP Android 11, API 30, TCG 无 KVM**）：**通过**
+  - 系统身份：`ro.build.flavor=sdk_phone_x86_64-userdebug`、`ro.build.version.release=11`、
+    24 个真实系统应用（Launcher3/Settings/SystemUI/DeskClock/Camera2/DocumentsUI/…）、
+    相机硬件特性齐全、有真实桌面壁纸
+  - 权限逐个申请：真实 `com.android.permissioncontroller.GrantPermissionsActivity` 弹出
+    「Allow AgentRuntime to access photos and media on your device?」，用户点 ALLOW 后
+    `dumpsys package` 记录 `READ_EXTERNAL_STORAGE: granted=true, flags=[USER_SET|...]`
+  - 悬浮窗授权：真实 `Settings$OverlaySettingsActivity` → 开关打开后 `appops` 显示
+    `SYSTEM_ALERT_WINDOW: allow`
+  - 权限拒绝回报：拒绝通知后主界面流水显示 `⚠ 权限未齐（已同意 1，拒绝 1）`，
+    弹窗列出 `仍被拒绝 1 项：· 通知（任务进度常驻通知）`
+  - **文件写入写出**：`file_io_probe_004` → **SUCCESS**，
+    `write_file: OK/FILE_WRITTEN 548ms` → `read_file: OK/FILE_READ 436ms`
+  - **共享存储反例**：写 `/sdcard/agent_shared_probe.txt` → `FAILED`，
+    `write_file: REJECTED/SCOPED_STORAGE`（如实拒绝，非静默成功）
+  - 设置页实测徽章：悬浮窗=已授权、通知=已允许、存储读写=受分区存储限制、运行时权限=1/2
+- 录屏：`verification/recordings/permission_flow_real_aosp_20261025.mp4`（90.08s / 480×800 / 24fps / 185KB）
+- 关键帧：`perm_p2.png`（说明页）、`perm_p3.png`（系统权限弹窗 ALLOW/DENY）、
+  `perm_p5.png`（悬浮窗授权页）、`perm_settings_final.png`（设置页权限状态）、
+  `real_aosp_launcher.png`（真实 AOSP 桌面）
+
+**未验证 / 未解决：**
+- 真机 ROM（无真机设备）；Android 13/14 的 `READ_MEDIA_*` 与 `foregroundServiceType` 实际行为
+  （本机 API 30，13+ 分支只做了单元测试覆盖）
+- API 30+ 共享目录写入需 `MANAGE_EXTERNAL_STORAGE`，本工程刻意不申请 → 该场景在 11+ 上始终不可用（设计取舍）
+- GitHub 推送（待用户提供空仓库名）
+
+### 当前状态
+`完成：权限逐个申请 / 共享存储读写 / 完整 AOSP 真实系统验证均已通过；剩余 GitHub 推送（待用户仓库名）`

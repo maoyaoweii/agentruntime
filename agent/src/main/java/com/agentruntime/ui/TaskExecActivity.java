@@ -72,7 +72,11 @@ public final class TaskExecActivity extends Activity {
         // 所有 wait_for/定位都会因为"看不到目标界面"而超时。
         // 真实入口（悬浮窗/磁贴）本来就不占前台，这里补上等价行为：
         // 任务开始前把任务栈移到后台，让被测应用成为活动窗口。
-        if (getIntent().getBooleanExtra("behind_after_launch", true)) {
+        //
+        // 例外：带 auto_confirm=false 的交互式任务不后移。用户要在这个界面上
+        // 逐个点同意（权限弹窗、风险确认都挂在当前 Activity 的窗口上），
+        // 一后移它们就无处可点，任务会直接卡死在等待里。
+        if (autoConfirm && getIntent().getBooleanExtra("behind_after_launch", true)) {
             moveTaskToBack(true);
         }
 

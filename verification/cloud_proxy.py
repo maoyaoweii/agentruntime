@@ -12,6 +12,8 @@ import http.server
 import urllib.request
 import urllib.error
 import os
+import sys
+import time
 
 UPSTREAM = "https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions"
 # 密钥从环境变量读取，绝不写进仓库。运行前：export MAAS_API_KEY=...
@@ -32,28 +34,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
         req.add_header("Content-Type", "application/json")
         auth = self.headers.get("Authorization")
         req.add_header("Authorization", auth if auth else "Bearer " + API_KEY)
-        try:
-            with urllib.request.urlopen(req, timeout=90) as r:
-                data = r.read()
-                self.send_response(r.status)
+        # 上游偶发 RemoteDisconnected / 读超时：实测连跑时第 3~5 次规划会稳定失败。
+        # 单次重试即可覆盖这类瞬断，且不改变 HTTPError（429/500 等真实状态码）的透传语义。
+        last = None
+        for attempt in (0, 1):
+            try:
+                with urllib.request.urlopen(req, timeout=200) as r:
+                    data = r.read()
+                    self.send_response(r.status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                return
+            except urllib.error.HTTPError as e:
+                data = e.read()
+                self.send_response(e.code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
-        except urllib.error.HTTPError as e:
-            data = e.read()
-            self.send_response(e.code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-        except Exception as e:
-            msg = ('{"error":"proxy_upstream_failed","detail":"%s"}' % type(e).__name__).encode()
-            self.send_response(502)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(msg)))
-            self.end_headers()
-            self.wfile.write(msg)
+                return
+            except Exception as e:  # 只对非 HTTP 状态码的传输层异常重试
+                last = e
+                sys.stderr.write("upstream attempt %d failed: %s: %s\n"
+                                 % (attempt, type(e).__name__, e))
+                sys.stderr.flush()
+                if attempt == 0:
+                    time.sleep(3)
+        msg = ('{"error":"proxy_upstream_failed","detail":"%s"}' % type(last).__name__).encode()
+        self.send_response(502)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(msg)))
+        self.end_headers()
+        self.wfile.write(msg)
 
     def do_POST(self):
         self._forward()

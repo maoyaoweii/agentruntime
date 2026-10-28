@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  任务执行浮窗：把「AI 在做什么、在想什么」直接叠在目标应用之上。
+  为什么不是 Activity：任务执行期间 Android 必须让被测应用处于前台，
+  Agent 自己一占前台，无障碍就只能看到自己的窗口，任务必然超时。
+  顶部标题栏是拖动把手；日志区只保留最近几条，避免浮窗越滚越大。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_overlay_panel"
+    android:elevation="12dp"
+    android:padding="10dp">
+
+    <LinearLayout
+        android:id="@+id/task_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="6dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:background="@drawable/bg_icon_square"
+            android:padding="3dp"
+            android:src="@drawable/ic_bot"
+            android:contentDescription="Agent" />
+
+        <TextView
+            android:id="@+id/task_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="7dp"
+            android:text="Agent 执行中"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/task_close"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:padding="7dp"
+            android:src="@drawable/ic_close"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="关闭浮窗" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/task_progress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="空闲"
+        android:textColor="@color/brand"
+        android:textSize="11sp" />
+
+    <ScrollView
+        android:id="@+id/task_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:fadeScrollbars="true"
+        android:scrollbars="vertical">
+
+        <LinearLayout
+            android:id="@+id/task_log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+</LinearLayout>

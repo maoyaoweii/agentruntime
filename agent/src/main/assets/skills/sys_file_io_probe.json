@@ -1,0 +1,14 @@
+{
+  "skill_id": "sys.file_io_probe",
+  "version": "1.0",
+  "args": ["path"],
+  "risk": "LOW",
+  "confirmation": "none",
+  "max_retries": 1,
+  "recovery": "none",
+  "postconditions": [],
+  "steps": [
+    {"action": "write_file", "params": {"path": "${path}", "content": "AGENT_FILE_MARK_2026"}},
+    {"action": "read_file", "params": {"path": "${path}", "max_bytes": 4096}}
+  ]
+}

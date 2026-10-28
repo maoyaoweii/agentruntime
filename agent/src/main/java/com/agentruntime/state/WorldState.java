@@ -74,7 +74,15 @@ public final class WorldState {
     }
 
     public boolean containsText(String text) {
-        return !findNodes(n -> n.containsText(text)).isEmpty();
+        if (text == null) return false;
+        // 与 VisualGrounder 的节点兜底保持一致：允许 "A|B|C" 多候选，命中任一即可。
+        // 中文目标对英文界面时，单个字面量几乎必然匹配不到。
+        for (String raw : text.split("\\|")) {
+            String needle = raw.trim();
+            if (needle.isEmpty()) continue;
+            if (!findNodes(n -> n.containsText(needle)).isEmpty()) return true;
+        }
+        return false;
     }
 
     public int nodeCount() {

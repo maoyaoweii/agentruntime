@@ -30,7 +30,9 @@ public class SkillLoadingRegressionTest {
     @Test
     public void allBuiltinSkillsLoadAndNoSilentLoadErrors() {
         SkillEngine e = engine();
-        assertEquals(23, e.skillIds().size());
+        // 数量必须与 assets/skills 下的 json 个数一致：少了说明有技能静默加载失败，
+        // 多了说明有技能没被收进清单。两种都是事故，所以这里对的是实际文件数。
+        assertEquals(24, e.skillIds().size());
         assertTrue("load errors: " + e.loadErrors(), e.loadErrors().isEmpty());
     }
 

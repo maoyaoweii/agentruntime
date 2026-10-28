@@ -98,7 +98,8 @@ public final class CloudPlannerAdapter {
             conn = (HttpURLConnection) new URL(baseUrl).openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(8000);
-            conn.setReadTimeout(15000);
+            // 推理型模型（如 spark-x2.6）先推理后回答，15s 不够，实测 ping 会被误判成"连接失败"。
+            conn.setReadTimeout(45000);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + apiKey);
             conn.setDoOutput(true);
@@ -127,6 +128,16 @@ public final class CloudPlannerAdapter {
 
     /** 请求云端生成 Task DSL；返回经校验的 TaskSpec，失败抛异常。 */
     public TaskSpec plan(String goal, List<String> skills, List<String> permissions) throws IOException, JSONException {
+        return plan(goal, skills, permissions, null);
+    }
+
+    /**
+     * @param catalog 技能清单（含必填参数名，如 {@code sys.clipboard_copy(text)}）。
+     *                只给技能名时真实模型无法知道要传哪些参数，实测会产出缺参步骤，
+     *                在 SkillEngine 解析阶段直接 SKILL_RESOLVE_FAILED。
+     */
+    public TaskSpec plan(String goal, List<String> skills, List<String> permissions, String catalog)
+            throws IOException, JSONException {
         SharedPreferences sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         String baseUrl = sp.getString(KEY_BASE_URL, "").trim();
         String apiKey = sp.getString(KEY_API_KEY, "").trim();
@@ -135,12 +146,46 @@ public final class CloudPlannerAdapter {
 
         String system = "你是移动设备任务规划器。只输出符合 Task DSL v1.0 的 JSON，不要输出其他文本。"
                 + "task_version 必须是 1.0；steps 只能使用下面列出的 skill，禁止自造 skill 名；"
-                + "allowed_apps 只能填 Android 包名（如 com.agenttestapp、org.fossify.notes），不能填类别名或虚构名；"
+                + "args 的键名必须与括号内给出的参数名逐字一致（例如 contact_alias 不能写成 recipient 或 contact_name，"
+                + "file_alias 不能写成 file_path），并给出真实值，缺参会直接执行失败；"
+                + "allowed_apps 只能填 Android 包名（如 com.agenttestapp、org.fossify.notes、org.fossify.clock），不能填类别名或虚构名；"
+                // 实测「找到 Admin 给他发消息」被规划成 sys.observe + web.find_text，网页技能去点原生 App 必然 NOT_FOUND
+                + "web.* 只能用于目标明确要求浏览网页/本地页面时；目标提到 App、应用、联系人、会话、发消息时，"
+                + "必须使用 agent_test.* 技能，禁止用 web.find_text/web.click_selector 代替原生 UI 操作；"
+                + "sys.* 只用于设备级动作（剪贴板/截图/时钟/媒体/观察）；sys.ui_launch_tap 是通用应用内原语，不在此限；"
+                + "其余 sys.* 不能代替应用内操作；"
+                // AgentTestApp 有专用技能，其它第三方应用没有：只能用通用「启动+按可见文字点击」原语
+                + "非 AgentTestApp 的第三方应用（如 org.fossify.notes、org.fossify.clock）没有专用技能时，"
+                + "用 sys.ui_launch_tap：args 为 app_package（该 App 的包名）与 text（界面上真实可见的文字），"
+                // 目标常是中文、第三方 App 界面常是英文：单个字面量匹配不到，必须给多候选
+                + "text 请写成 3~5 个候选、用 | 分隔（该 App 可能的中英文标签都写上，"
+                + "例如 新建|New note|Create a new note），执行时命中任一候选即可；"
+                // 实测模型会把「打开应用」拆成单独一步去点应用名/标题栏，而标题栏往往没有对应文字节点，
+                // 该步必然找不到目标；沉积到后续可点击按钮上才是正确做法
+                + "sys.ui_launch_tap 本身已经包含启动应用，不要为『打开应用』单独加一步，"
+                + "也不要把应用名/标题栏当作点击目标（应用名通常不在视图树里）；"
+                + "text 候选必须是应用内真实存在的按钮或标签文字（如新建按钮 Create a new note、秒表标签 Stopwatch）；"
+                + "并且 allowed_apps 必须包含该包名，否则启动会被拒绝；"
+                // 实测模型会把普通会话误选成 *_with_dialog 变体，导致找不到弹窗节点
+                + "open_chat 用于进入与联系人的会话；open_chat_with_dialog 只在目标明确提到弹窗/对话框时使用；"
+                + "send_text / send_file 必须排在 open_chat 之后；"
                 + "steps[].confirmation 只能取 before_external_send / before_payment / before_delete / always / never 之一（无需要时可省略该字段）；"
                 + "高风险发送步骤必须带 confirmation: before_external_send；"
-                + "preconditions 与 postconditions 只允许机器可判定的断言（形如 ui_contains:文本 / package_is:包名），"
-                + "不要写自然语言描述；无法确定时留空数组 []。";
-        String user = "目标：" + goal + "\n可用 skill：" + skills + "\n设备权限：" + permissions
+                // 任务开始时前台是 Agent 自己的界面，任何 UI/前台包断言都必然失败，实测直接 PRECONDITION_FAILED
+                + "preconditions 一律输出空数组 []；"
+                + "postconditions 只允许 ui_contains: / text_message_visible: / package_is: 三种可判定断言，"
+                + "不要写自然语言描述，无法确定时留空数组 []；"
+                // 一个 skill 内部常有 4~6 个动作，模型给 max_steps=2 会导致中途 STEP_BUDGET_EXCEEDED
+                + "limits.max_steps 至少 24，timeout_seconds 至少 180。";
+        // 设备上实际装了哪些第三方应用必须由本机告知：只靠模型猜包名会产出不存在的包，
+        // launch_app 直接 APP_NOT_ALLOWED / 启动失败。
+        String apps = installedThirdPartyApps();
+        if (!apps.isEmpty()) {
+            system += "\n设备已安装的第三方应用（应用名=包名）：" + apps
+                    + "。目标里说到某个应用时，必须使用这里给出的包名，不要凭猜测造包名。";
+        }
+        String user = "目标：" + goal + "\n可用 skill（括号内为必填参数名，args 必须给全）："
+                + (catalog != null ? catalog : skills) + "\n设备权限：" + permissions
                 + "\n输出 JSON 字段：task_version, task_id, goal, allowed_apps, preconditions, steps[{skill,args,confirmation}], postconditions, limits{max_steps,max_replans,timeout_seconds}";
 
         JSONObject body = new JSONObject();
@@ -156,9 +201,10 @@ public final class CloudPlannerAdapter {
             conn = (HttpURLConnection) new URL(baseUrl).openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(8000);
-            // 15s 对"边推理边输出"的模型（如 spark-x2.6）不够：实测一次规划往返约 20s，
-            // 超时过短会把成功响应判成 transport failure，表现为"配好了却规划不了"。
-            conn.setReadTimeout(60000);
+            // 推理型模型（如 spark-x2.6）先产出推理再产出 JSON：实测普通规划约 20s，
+            // 长提示+多技能清单可超过 60s。超时过短会把成功响应判成 transport failure，
+            // 表现为"配好了却规划不了"。
+            conn.setReadTimeout(150000);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + apiKey);
             conn.setDoOutput(true);
@@ -181,6 +227,8 @@ public final class CloudPlannerAdapter {
             JSONObject taskJson = com.agentruntime.dsl.OutputFormat.parseObject(content);
             DslParser.ValidationResult vr = DslParser.validateTaskJson(taskJson);
             if (!vr.ok) throw new JSONException("cloud plan schema invalid: " + vr.error);
+            // 记录模型给出的步骤与参数：规划错误（包名写错、text 猜错）只能从这里看。
+            android.util.Log.i("CloudPlannerAdapter", "plan steps " + taskJson.optJSONArray("steps"));
             return DslParser.taskFromJson(taskJson);
         } catch (IOException e) {
             android.util.Log.w("CloudPlannerAdapter", "plan transport failure: "
@@ -188,6 +236,30 @@ public final class CloudPlannerAdapter {
             throw e;
         } finally {
             if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * 已安装的第三方应用（排除系统应用与 Agent 自身），格式「应用名=包名」。
+     * 只作为规划上下文，最多列 12 个，避免提示词膨胀。
+     */
+    private String installedThirdPartyApps() {
+        try {
+            android.content.pm.PackageManager pm = context.getPackageManager();
+            StringBuilder sb = new StringBuilder();
+            int n = 0;
+            for (android.content.pm.ApplicationInfo ai : pm.getInstalledApplications(0)) {
+                if ((ai.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+                if (context.getPackageName().equals(ai.packageName)) continue;
+                if (n >= 12) break;
+                CharSequence label = pm.getApplicationLabel(ai);
+                if (sb.length() > 0) sb.append('、');
+                sb.append(label).append('=').append(ai.packageName);
+                n++;
+            }
+            return sb.toString();
+        } catch (RuntimeException e) {
+            return "";
         }
     }
 

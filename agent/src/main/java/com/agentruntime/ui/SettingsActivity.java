@@ -39,6 +39,8 @@ public final class SettingsActivity extends Activity {
     private TextView permNotify;
     private TextView permIme;
     private TextView permWriteSettings;
+    private TextView permStorage;
+    private TextView permRuntime;
 
     private EditText etCloudUrl;
     private EditText etCloudKey;
@@ -68,6 +70,8 @@ public final class SettingsActivity extends Activity {
         permNotify = findViewById(R.id.perm_notify);
         permIme = findViewById(R.id.perm_ime);
         permWriteSettings = findViewById(R.id.perm_write_settings);
+        permStorage = findViewById(R.id.perm_storage);
+        permRuntime = findViewById(R.id.perm_runtime);
 
         etCloudUrl = findViewById(R.id.et_cloud_url);
         etCloudKey = findViewById(R.id.et_cloud_key);
@@ -98,6 +102,24 @@ public final class SettingsActivity extends Activity {
         });
         findViewById(R.id.row_notify_perm).setOnClickListener(v ->
                 UiKit.requestNotificationPermission(this, 1003));
+        findViewById(R.id.row_runtime_perm).setOnClickListener(v -> {
+            String[] missing = UiKit.ungrantedRuntimePermissions(this);
+            if (missing.length == 0) {
+                UiKit.toast(this, "运行时权限都已授予");
+                return;
+            }
+            StringBuilder sb = new StringBuilder("系统会依次弹出以下 ").append(missing.length)
+                    .append(" 项，每一项都需要你点「允许」：\n");
+            for (String p : missing) sb.append("  · ").append(UiKit.permissionLabel(p)).append('\n');
+            new AlertDialog.Builder(this)
+                    .setTitle("运行时权限")
+                    .setMessage(sb.toString())
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("开始申请", (d, w) ->
+                            UiKit.requestRuntimePermissions(this, 1005))
+                    .show();
+        });
+        findViewById(R.id.row_storage_perm).setOnClickListener(v -> explainStorage());
         findViewById(R.id.row_ime).setOnClickListener(v -> {
             if (com.agentruntime.ime.AgentImeService.isSelected(this)) {
                 UiKit.toast(this, "Agent 输入法已启用");
@@ -162,6 +184,16 @@ public final class SettingsActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         renderPermissions();
+        if (requestCode == 1005 && grantResults.length > 0) {
+            int granted = 0;
+            for (int r : grantResults) {
+                if (r == android.content.pm.PackageManager.PERMISSION_GRANTED) granted++;
+            }
+            String[] still = UiKit.ungrantedRuntimePermissions(this);
+            UiKit.toast(this, still.length == 0
+                    ? "权限已全部授予（本次同意 " + granted + " 项）"
+                    : "已同意 " + granted + " 项，仍有 " + still.length + " 项被拒绝");
+        }
     }
 
     // ------------------------------------------------------------ 机型适配
@@ -258,6 +290,76 @@ public final class SettingsActivity extends Activity {
         boolean ws = app != null && app.systemBridge() != null && app.systemBridge().canWriteSettings();
         UiKit.setBadge(permWriteSettings, ws ? "已授权" : "去授权",
                 ws ? UiKit.Badge.OK : UiKit.Badge.NEUTRAL);
+
+        // 存储：把"能不能读写共享目录"和"为什么不能"一起显示。
+        // 分区存储之后这两件事不再等价，只显示一个权限状态会误导。
+        boolean readStorage = UiKit.hasReadStoragePermission(this);
+        boolean writeStorage = UiKit.hasWriteStoragePermission(this);
+        if (permStorage != null) {
+            String text;
+            UiKit.Badge badge;
+            if (readStorage && writeStorage) {
+                text = "可读写";
+                badge = UiKit.Badge.OK;
+            } else if (readStorage) {
+                text = "只读";
+                badge = UiKit.Badge.WARN;
+            } else if (android.os.Build.VERSION.SDK_INT >= 30) {
+                text = "受分区存储限制";
+                badge = UiKit.Badge.WARN;
+            } else {
+                text = "未授权";
+                badge = UiKit.Badge.DANGER;
+            }
+            UiKit.setBadge(permStorage, text, badge);
+        }
+
+        String[] total = UiKit.runtimePermissions(this);
+        String[] ok = UiKit.grantedRuntimePermissions(this);
+        if (permRuntime != null) {
+            UiKit.setBadge(permRuntime, ok.length + "/" + total.length,
+                    ok.length == total.length ? UiKit.Badge.OK : UiKit.Badge.WARN);
+        }
+    }
+
+    /** 存储权限说明：先说清本机到底受哪条规则约束，再给出可用的替代路径。 */
+    private void explainStorage() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("本机 Android ").append(android.os.Build.VERSION.RELEASE)
+                .append(" (API ").append(android.os.Build.VERSION.SDK_INT).append(")\n\n");
+        sb.append("共享目录 /sdcard：")
+                .append(UiKit.hasReadStoragePermission(this) ? "可读" : "不可读")
+                .append(" / ")
+                .append(UiKit.hasWriteStoragePermission(this) ? "可写" : "不可写")
+                .append('\n');
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            sb.append("Android 11 起共享目录受分区存储限制，"
+                    + "读写他应用文件需要 MANAGE_EXTERNAL_STORAGE，本 App 刻意不申请"
+                    + "（那等于交出整个存储空间）。\n");
+        }
+        sb.append("\napp 专属目录（始终可用，无需权限）：\n  ");
+        java.io.File ext = getExternalFilesDir(null);
+        sb.append(ext == null ? "(不可用)" : ext.getAbsolutePath());
+        sb.append("\n\nAgent 的 read_file / write_file 就落在这里。");
+
+        new AlertDialog.Builder(this)
+                .setTitle("存储读写")
+                .setMessage(sb.toString())
+                .setNegativeButton("关闭", null)
+                .setPositiveButton(android.os.Build.VERSION.SDK_INT >= 30 ? "去应用详情页" : "申请存储权限",
+                        (d, w) -> {
+                            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                                try {
+                                    startActivity(new android.content.Intent(
+                                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            android.net.Uri.parse("package:" + getPackageName())));
+                                } catch (Exception ignored) {
+                                }
+                            } else {
+                                UiKit.requestRuntimePermissions(this, 1005);
+                            }
+                        })
+                .show();
     }
 
     // ------------------------------------------------------------ 云端

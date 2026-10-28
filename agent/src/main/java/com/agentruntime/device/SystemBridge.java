@@ -10,6 +10,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.os.Build;
+import android.os.Environment;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -39,11 +40,11 @@ import java.util.List;
  *   <li>音量 / 媒体键 / 剪贴板：公开 API，无需授权</li>
  *   <li>亮度：需要 {@code WRITE_SETTINGS}，未授权时明确返回 NEED_PERMISSION</li>
  *   <li>振动：VIBRATE 是普通权限，装上就有</li>
- *   <li>文件：<b>只允许 app 自己的私有目录</b>，不碰外部存储——
- *       分区存储下读写别人目录要么被拒、要么得申请 MANAGE_EXTERNAL_STORAGE（一个不该给的权限）</li>
+ *   <li>文件：三级根目录——app 私有目录、app 专属外部目录（均无需权限）、共享存储
+ *       {@code /sdcard}（需 READ/WRITE_EXTERNAL_STORAGE）。第三级在分区存储机型上会
+ *       如实返回 NEED_PERMISSION / SCOPED_STORAGE，而不是假装写成功又悄悄丢数据；
+ *       也刻意不申请 MANAGE_EXTERNAL_STORAGE（一个不该给的权限）</li>
  * </ul>
- *
- * <p><b>未在设备验证</b>：本环境无真机与模拟器。
  */
 public final class SystemBridge {
 
@@ -325,9 +326,74 @@ public final class SystemBridge {
 
     // ------------------------------------------------------------- 文件
 
-    /** 允许读写的根目录：只有 app 私有目录，不碰外部存储。 */
+    /**
+     * 允许读写的根目录。
+     *
+     * <p>前两个是 app 自己的目录，永远可用、不需要任何权限。第三个是共享存储
+     * （{@code /sdcard}），它才是"文件写入写出内存读取"要覆盖的目标：
+     * 没有它，Agent 就只能在自己的沙箱里自娱自乐，导出不了任何东西给用户。
+     *
+     * <p>共享存储是否真的可达，交给 {@link #sharedStorageIssue} 在每次调用时判断，
+     * 而不是在这里静态决定——权限是运行时可变的，缓存一次结论就会出现
+     * "刚授权完仍然报 PATH_NOT_ALLOWED"的假故障。
+     */
     private File[] allowedRoots() {
-        return new File[]{context.getFilesDir(), context.getExternalFilesDir(null)};
+        return new File[]{context.getFilesDir(), context.getExternalFilesDir(null),
+                Environment.getExternalStorageDirectory()};
+    }
+
+    /**
+     * 共享存储当前不可用的原因，null 表示可用。
+     *
+     * <p>分区存储之后"有没有权限"和"能不能读写"不再是一回事：
+     * API 29 靠 {@code requestLegacyExternalStorage} 退回旧模型，30 起该标志被忽略、
+     * 共享目录只能靠 MANAGE_EXTERNAL_STORAGE（本工程刻意不申请）。所以这里分版本如实回答，
+     * 不把一个被系统忽略的权限当成"已授权"。
+     *
+     * <p><b>关键顺序：先判 app 自己的目录。</b>{@code getExternalFilesDir()} 的物理路径
+     * 就落在 {@code /sdcard/Android/data/<pkg>/files} 下面，用"是否在 /sdcard 之下"去判
+     * 会把 app 自己的目录也判成受限共享目录——那是个假故障，app 专属目录在分区存储下
+     * 一直可读写且不需要任何权限。
+     */
+    private String sharedStorageIssue(File target) {
+        if (target == null) return null;
+        // app 私有目录与 app 专属外部目录：永远可用，不受分区存储影响。
+        if (isUnder(target, context.getFilesDir())) return null;
+        if (isUnder(target, context.getExternalFilesDir(null))) return null;
+        if (!isUnderSharedStorage(target)) return null;
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            return "Android 11+ 分区存储下共享目录需 MANAGE_EXTERNAL_STORAGE（未申请）；"
+                    + "可用 app 专属目录：" + context.getExternalFilesDir(null);
+        }
+        if (Build.VERSION.SDK_INT >= 29 && !Environment.isExternalStorageLegacy()) {
+            return "本机未启用 legacy 外部存储；可用 app 专属目录："
+                    + context.getExternalFilesDir(null);
+        }
+        int read = context.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE);
+        if (read != PackageManager.PERMISSION_GRANTED) {
+            return "NEED_PERMISSION:READ_EXTERNAL_STORAGE";
+        }
+        int write = context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        if (write != PackageManager.PERMISSION_GRANTED) {
+            return "NEED_PERMISSION:WRITE_EXTERNAL_STORAGE";
+        }
+        return null;
+    }
+
+    private boolean isUnder(File f, File root) {
+        if (f == null || root == null) return false;
+        try {
+            String rc = root.getCanonicalPath();
+            String fc = f.getCanonicalPath();
+            return fc.equals(rc) || fc.startsWith(rc + File.separator);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean isUnderSharedStorage(File f) {
+        return isUnder(f, Environment.getExternalStorageDirectory());
     }
 
     /**
@@ -360,10 +426,17 @@ public final class SystemBridge {
         long start = System.currentTimeMillis();
         File f = resolveSafe(path);
         if (f == null) {
-            return ExecResult.reject("PATH_NOT_ALLOWED", "only app private dir is readable", 0);
+            return ExecResult.reject("PATH_NOT_ALLOWED",
+                    "allowed roots: app private dir, app external dir, shared storage", 0);
+        }
+        String issue = sharedStorageIssue(f);
+        if (issue != null) {
+            // 前缀 NEED_PERMISSION: 让上层转成"去申请权限"的引导，而不是笼统失败。
+            return ExecResult.reject(issue.startsWith("NEED_PERMISSION") ? "NEED_PERMISSION" : "SCOPED_STORAGE",
+                    issue, 0);
         }
         if (!f.exists() || !f.isFile()) {
-            return ExecResult.fail("FILE_NOT_FOUND", "file does not exist in the allowed private area",
+            return ExecResult.fail("FILE_NOT_FOUND", "file does not exist in the allowed area",
                     0, elapsed(start));
         }
         if (!f.canRead()) {
@@ -394,7 +467,13 @@ public final class SystemBridge {
         long start = System.currentTimeMillis();
         File f = resolveSafe(path);
         if (f == null) {
-            return ExecResult.reject("PATH_NOT_ALLOWED", "only app private dir is writable", 0);
+            return ExecResult.reject("PATH_NOT_ALLOWED",
+                    "allowed roots: app private dir, app external dir, shared storage", 0);
+        }
+        String issue = sharedStorageIssue(f);
+        if (issue != null) {
+            return ExecResult.reject(issue.startsWith("NEED_PERMISSION") ? "NEED_PERMISSION" : "SCOPED_STORAGE",
+                    issue, 0);
         }
         try {
             File parent = f.getParentFile();

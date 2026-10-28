@@ -1,15 +1,21 @@
-# Android AI Agent Runtime V1.7
+# Android AI Agent Runtime V1.8
 
-> **当前交付状态（2026-10-24，V1.7）：** JVM 全量测试 **297/297** 通过，Debug/Release 构建成功。
-> **当前 APK 的设备端端到端验证已在本地真实 Android 模拟器上完成**（Linux + TCG 软件模拟，无 KVM）：
-> 核心基准 **6/6**、内置受控浏览器 DOM 读写 **2/2**、安全负例 **3/3** 全部通过；
-> 截图 / 手势 / 无障碍连接首次取得真实设备回执。过程中修复 4 个真机缺陷。
-> 详细见 [V1.7 设备端验证报告](docs/V1.7_DEVICE_VERIFICATION.md) 与 [交付状态与验证边界](docs/DELIVERY_STATUS.md)。
+> **当前交付状态（2026-10-25，V1.8）：** 在**完整 AOSP Android 11**（`system-images;android-30;default;x86_64`，
+> 非 ATD 精简镜像）上完成端到端验证：Launcher3 / Settings / SystemUI / Camera / DocumentsUI 齐全。
+>
+> - **权限逐个申请**：一键入口先弹说明页，再交给系统原生 `GrantPermissionsActivity` 逐个弹窗，
+>   用户本人点「允许」；被拒后明确回报差哪几项，不存在"没点也算授权"的路径。
+> - **文件写入写出**：`write_file` / `read_file` 在真机系统上 `FILE_WRITTEN 548ms` → `FILE_READ 436ms` 通过；
+>   共享目录在 Android 11+ 如实返回 `SCOPED_STORAGE` 而非静默失败（刻意不申请 `MANAGE_EXTERNAL_STORAGE`）。
+> - **可拖动悬浮窗**：任务执行期间叠在目标应用之上，逐条显示 **思考**（规划）与 **动作**（步骤执行）。
+> - 真实云模型 `spark-x2.6` 承担自然语言规划，扩展到 Fossify Notes / Clock / Calendar 三个第三方应用。
+>
+> 详细见 [工程修改日志](docs/PROJECT_CHANGELOG.md) 与 [V1.7 设备端验证报告](docs/V1.7_DEVICE_VERIFICATION.md)。
 > Debug APK 使用调试签名，Release APK 未签名。
 >
 > 本 README 其余部分与 V1.x 报告包含历史构建、测试和设备记录，不代表当前 APK 的设备端验收；本轮具体结论以交付状态页和随包 `verification/` 最终记录为准。
 
-七轮改造：**V1.1 补引擎**（环境感知 / Computer Use / 浏览器 / 提示词 / 本地模型）、**V1.2 补交互**（四大界面 / 悬浮球 / 四种唤起）、**V1.3 补底层**（横竖屏 / 内置意图模型 / 输出格式 / 系统工具 / 输入法）、**V1.4 补视觉**（端侧视觉语言模型）、**V1.5 补决策**（System-1 / Jev-like 决策器）、**V1.6 补形态**（Codex 式会话流水 / 厂商 ROM 适配 / 双 ABI）、**V1.7 补验证**（本地真实模拟器部署 + 设备端 E2E + 真机缺陷修复）。
+七轮改造：**V1.1 补引擎**（环境感知 / Computer Use / 浏览器 / 提示词 / 本地模型）、**V1.2 补交互**（四大界面 / 悬浮球 / 四种唤起）、**V1.3 补底层**（横竖屏 / 内置意图模型 / 输出格式 / 系统工具 / 输入法）、**V1.4 补视觉**（端侧视觉语言模型）、**V1.5 补决策**（System-1 / Jev-like 决策器）、**V1.6 补形态**（Codex 式会话流水 / 厂商 ROM 适配 / 双 ABI）、**V1.7 补验证**（本地真实模拟器部署 + 设备端 E2E + 真机缺陷修复）、**V1.8 补权限与存储**（权限逐个申请 / 共享存储读写 / 换用完整 AOSP 真实系统镜像）。
 
 > V1.0 是「能跑通固定基准的 Agent 骨架」。
 > V1.1 解决它的三个硬伤：不知道环境、只有一条操作通道、所谓「AI 规划」从未调用过模型。
@@ -457,6 +463,7 @@ V1.5 只打 `arm64-v8a`。APK 能装进 x86_64 模拟器，但一旦真去加载
 |---|---|
 | emulator 37.2.12 | ✅ 安装 |
 | `system-images;android-30;aosp_atd;x86_64` | ✅ 安装（3.2GB，官方 CI 精简镜像） |
+| `system-images;android-30;default;x86_64` | ✅ 安装（3.2GB，**完整 AOSP**，V1.8 起改用此镜像） |
 | AVD `agent_api30` | ✅ 创建（Nexus 5 规格） |
 | 启动脚本 `tools/emu_start.py` | ✅ 可用（脱管 + 轮询 `sys.boot_completed`） |
 | **实际启动** | ❌ **固件里 SVM 没开** |

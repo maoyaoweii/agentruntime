@@ -140,7 +140,7 @@
    "cls": "LinearLayout",
    "x": 42,
    "y": 248,
-   "w": 402,
+   "w": 452,
    "h": 41,
    "id": "status_row"
   },
@@ -234,7 +234,7 @@
    "y": 248,
    "w": 51,
    "h": 41,
-   "text": "skills 23",
+   "text": "skills 24",
    "fg": "#FF6C7484",
    "size": 33,
    "padL": 0,
@@ -245,6 +245,20 @@
   {
    "cls": "TextView",
    "x": 387,
+   "y": 248,
+   "w": 50,
+   "h": 41,
+   "text": "perm 0\/2",
+   "fg": "#FFE3B341",
+   "size": 33,
+   "padL": 0,
+   "padT": 0,
+   "gravity": 8388659,
+   "lines": 1
+  },
+  {
+   "cls": "TextView",
+   "x": 437,
    "y": 248,
    "w": 57,
    "h": 41,
@@ -460,7 +474,7 @@
    "cls": "LinearLayout",
    "x": 36,
    "y": 2452,
-   "w": 468,
+   "w": 562,
    "h": 77
   },
   {
@@ -544,6 +558,22 @@
    "lines": 1
   },
   {
+   "cls": "TextView",
+   "x": 504,
+   "y": 2452,
+   "w": 70,
+   "h": 77,
+   "id": "chip_perms",
+   "bg": "#FF121418",
+   "text": "权限申请",
+   "fg": "#FF9AA3B2",
+   "size": 35,
+   "padL": 33,
+   "padT": 18,
+   "gravity": 8388659,
+   "lines": 1
+  },
+  {
    "cls": "LinearLayout",
    "x": 36,
    "y": 2553,
@@ -572,7 +602,7 @@
    "w": 26,
    "h": 41,
    "id": "tv_version",
-   "text": "v1.6.0  api30  act40  sk23",
+   "text": "v1.6.0  api30  act40  sk24",
    "fg": "#FF6C7484",
    "size": 32,
    "padL": 0,
