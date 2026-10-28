@@ -72,6 +72,12 @@ public final class IntentPlanner {
         IntentModel.Prediction p = model.predict(goal);
         if (!p.usable) return null;
 
+        // 实测缺陷：模型只学字符 n-gram，不认识应用实体，
+        // 「打开 Aurora 商店应用」「打开 F-Droid 应用商店」都会被高强度判成 open_clock，
+        // 结果真的去开时钟，且任务还报 SUCCESS。open_clock 的目标一定是时钟类应用，
+        // 目标句里没有任何时钟词就说明这是误判，必须让位给上层真实规划。
+        if ("open_clock".equals(p.intent) && !mentionsClock(goal)) return null;
+
         String skill = PARAM_FREE.get(p.intent);
         if (skill != null) {
             return buildTask(goal, p.intent, skill, new JSONObject());
@@ -90,6 +96,14 @@ public final class IntentPlanner {
 
         // 其余意图需要参数提取（标题、对象、消息文本），当前实现不猜
         return null;
+    }
+
+    /** 目标句是否真的在说时钟类应用。 */
+    static boolean mentionsClock(String goal) {
+        if (goal == null) return false;
+        String g = goal.toLowerCase(java.util.Locale.ROOT);
+        return g.contains("时钟") || g.contains("闹钟") || g.contains("计时")
+                || g.contains("clock") || g.contains("alarm");
     }
 
     /** 预测但不论是否可执行，用于日志与诊断。 */

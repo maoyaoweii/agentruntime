@@ -1,9 +1,14 @@
-# Android AI Agent Runtime V1.8
+# Android AI Agent Runtime V1.9
 
 > **仓库：** https://github.com/xianshengl487-star/agentruntime （private，默认分支 `main`）
 
-> **当前交付状态（2026-10-25，V1.8）：** 在**完整 AOSP Android 11**（`system-images;android-30;default;x86_64`，
+> **当前交付状态（2026-10-28，V1.9）：** 在**完整 AOSP Android 11**（`system-images;android-30;default;x86_64`，
 > 非 ATD 精简镜像）上完成端到端验证：Launcher3 / Settings / SystemUI / Camera / DocumentsUI 齐全。
+>
+> - **真实第三方应用**：从 F-Droid 镜像下载并安装 F-Droid / NewPipe / Aurora Store / AntennaPod
+>   四个真实应用（均含 x86_64 原生库），由 Agent 用云模型规划真实操控，结果见 `verification/market_apps/`。
+> - **本地小模型**：内置 17KB 意图模型（朴素贝叶斯）离线兜住单句目标；实测发现它对
+>   「打开某应用」存在实体盲区（把 Aurora/F-Droid 判成 open_clock），已加护栏并有单测。
 >
 > - **权限逐个申请**：一键入口先弹说明页，再交给系统原生 `GrantPermissionsActivity` 逐个弹窗，
 >   用户本人点「允许」；被拒后明确回报差哪几项，不存在"没点也算授权"的路径。

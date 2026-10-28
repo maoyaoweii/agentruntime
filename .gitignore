@@ -10,6 +10,9 @@ captures/
 .avd/
 *.log
 
+# 第三方 APK 原件（体积大，下载地址见 docs/PROJECT_CHANGELOG.md [任务 21]）
+verification/apks/
+
 # 系统与编辑器
 .DS_Store
 Thumbs.db

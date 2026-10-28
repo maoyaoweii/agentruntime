@@ -4,13 +4,11 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 20] 2026-10-28 - 本地文件修改/删除能力 + 真实系统应用操控**。
-> 新增 `append_file`（修改）与 `delete_file`（删除）动作原语（40 → 42），删除带三重护栏
-> （只删单文件 / 拒删目录 / 拒删根目录，删后复查）；规划提示词改为下发**设备上可启动的应用**
-> 真实包名（含系统应用），并新增 `sys.open_settings_page` / `sys.file_ops` / `sys.file_delete`
-> 三个技能（技能 28 个）。实测：本地文件 6/6（含 run-as 外部磁盘校验）、
-> 真实系统应用 4/4（Settings / DeskClock / Calendar / DocumentsUI），JVM 全量 306/306 通过。
-> 上一轮：[任务 19] 推送到 GitHub 仓库 `xianshengl487-star/agentruntime`（private）。
+> 最新一轮见文末 **[任务 21] 2026-10-28 - 常见应用下载/真机操控测试 + 本地小模型作用与护栏**。
+> 下载并安装 4 个真实第三方应用（F-Droid / NewPipe / Aurora Store / AntennaPod，均含 x86_64），
+> 由云模型规划真实操控；实测发现内置意图模型**实体盲区**（把「打开 Aurora 商店应用」判成 open_clock，
+> 真去开时钟且报 SUCCESS），已加护栏并补单测（2 用例）。JVM 全量 **308/308** 通过。
+> 上一轮：[任务 20] 本地文件创建/修改/读取/删除 + 4 个真实系统应用操控（含 run-as 外部磁盘校验）。
 > 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/real_app_control_20261028.mp4`、
 > `verification/recordings/permission_flow_real_aosp_20261025.mp4`、
 > `verification/recordings/overlay_task_panel_20261025.mp4`、
@@ -2566,3 +2564,149 @@ sys.ui_launch_tap{com.android.documentsui, "Downloads|下载"}
 
 ### 当前状态
 `完成：本地文件创建/修改/读取/删除 + 4 个真实系统应用操控均已实测通过，306 个 JVM 用例全绿`
+
+---
+
+## [任务 21] 2026-10-28 15:00 - 常见应用下载/真机操控测试 + 本地小模型作用与护栏
+
+### 本次目标
+- 下载并安装「市面上常见」的真实第三方应用，在完整 AOSP 模拟器上安装并通过 Agent 操控；
+- 说明本地小模型在规划链路中到底起什么作用（含实测证据与能力边界）；
+- 顺带修复测试中暴露的规划缺陷。
+
+### 修改前状态
+- 已完成 [任务 20]：42 个动作原语、28 个技能、真实系统应用 4/4、JVM 306/306；
+- 被测对象此前只有 AOSP 内置应用（Settings / DeskClock / Calendar / DocumentsUI），从未装过第三方商店类应用；
+- 内置意图模型（`assets/models/intent_nb.json`，17KB）只有单测，未在真实「打开某应用」目标上验证过。
+
+### 环境与下载（实测）
+- 模拟器：`system-images;android-30;default;x86_64`（完整 AOSP 11），TCG（`-accel off`）；
+- 网络：`f-droid.org` / `cloudflare.f-droid.org` 与本出口 TLS 握手失败（`curl(35) SSL_ERROR_SYSCALL`），
+  改用清华 TUNA 的 F-Droid 镜像 `https://mirrors.tuna.tsinghua.edu.cn/fdroid/repo/` 下载成功；
+- 下载结果（`verification/apks/`）：
+
+| 应用 | 包名 | 文件 | 体积 | APK 内 ABI |
+|---|---|---|---|---|
+| F-Droid 商店 | `org.fdroid.fdroid` | `org.fdroid.fdroid_1023052.apk` | 12.4 MB | arm64-v8a / armeabi-v7a / x86 / x86_64 |
+| NewPipe | `org.schabi.newpipe` | `org.schabi.newpipe_1015.apk` | 11.5 MB | 同上 |
+| Aurora Store | `com.aurora.store` | `com.aurora.store_73.apk` | 8.7 MB | 同上 |
+| AntennaPod | `de.danoeh.antennapod` | `de.danoeh.antennapod_3120195.apk` | 17.0 MB | 同上 |
+
+- 四个 APK 全部 `adb install` 成功，`pm list packages` 可查；启动全部落到各自 MainActivity。
+- 放弃项：Termux（GitHub 通用包 108MB）经 `ghproxy.net` 分块下载两次均在 ~5–11MB 处被截断，
+  与本轮目标无关，未继续尝试；`com.termux_118.apk` 在 TUNA 镜像 404（镜像滞后）。
+
+### 实测结果（`verification/market_apps/`）
+```
+B01_newpipe_settings  FAILED   101568ms  cloud=1  sys.ui_launch_tap ×2 WAIT_TIMEOUT
+B02_antennapod_queue  SUCCESS   29909ms  cloud=2  launch→visual_tap→web.find_text(FOUND_A11Y)
+B03_aurora_store      SUCCESS   17930ms  执行的是 sys.open_clock（开的是时钟，不是 Aurora）
+B04_fdroid_store      SUCCESS    7621ms  同上
+```
+- B01：NewPipe 启动成功（`launch_app OK`），但技能内 `wait_for` 等的是「设置」节点，
+  主界面没有该节点（设置藏在抽屉里）→ 两步均 `WAIT_TIMEOUT`，任务如实 FAILED。
+- B02：AntennaPod 真实启动并完成一次 `visual_tap`，`web.find_text` 在界面里 `FOUND_A11Y`。
+- B03/B04：**这是本轮最重要的发现**——目标句是「打开 Aurora 商店应用」「打开 F-Droid 应用商店」，
+  实际执行的技能却是 `sys.open_clock`，前台变成 `com.android.deskclock`，任务仍报 SUCCESS。
+
+### 问题记录
+
+#### 问题 85：带 goal 的请求不会顺带落盘云端配置
+- 现象：`am start ... --es goal_b64 ... --es cloud_base_url/cloud_api_key/cloud_model` 时，
+  结果是 `no planner available (local rules miss, local model unconfigured, cloud unconfigured)`。
+- 排查：[TaskExecActivity.java](../../agent/src/main/java/com/agentruntime/ui/TaskExecActivity.java#L86-L100)
+  只在「cloud 参数存在且没有任何目标」的自检分支里调用 `cloud.configure(...)`，带 goal 时不写配置。
+- 处理：验证脚本先发一次无目标的自检请求把配置落盘，再跑用例（已写入 `market_app_ops.sh`）。
+  该行为对自动化入口确实反直觉，未改代码（改动需重装 APK，本轮设备环境不稳定），记为遗留。
+
+#### 问题 86：完整 AOSP 在 3 vCPU / 2048MB 下反复 watchdog
+- 现象：装包期间 `Failure calling service package: Broken pipe`，
+  `logcat -b crash` 出现 launcher / phone / bluetooth / networkstack 的 `DeadSystemException`；
+  `service list` 从 177 掉到 36 后再慢慢恢复，`uptime` 不归零 → 是 system_server 重启而非整机重启。
+- 排查：宿主只有 3 核，模拟器默认起 3 vCPU，宿主机与客机争抢同一批核；
+  `Watchdog` 日志显示 dexopt 期间暂停/恢复主线程检查；`-memory 1536` 被 emulator 强制抬到 2048
+  （`Increasing RAM size to 2048MB`），宿主 cgroup `memory.max=4GB`。
+- 处理：改为 `-cores 2` 冷启动（本轮后续用例均在该配置下跑完）；断言：安装与 4 个用例期间不再出现
+  `Can't find service: package`。仍是"低配宿主跑完整 AOSP"的固有风险，记入遗留。
+
+#### 问题 87：内置意图模型存在「实体盲区」，把任意「打开 X 应用」判成 open_clock（已修复）
+- 现象：B03/B04 目标句被内置模型命中（`intent_hits` 递增），执行 `sys.open_clock`，开的是时钟。
+- 根因：`intent_nb.json` 是字符 uni/bi-gram 的朴素贝叶斯，只有 12 个固定意图，
+  **不认识应用实体**。「打开…应用」这一句式的高频 n-gram 把分数推向 `open_clock`，
+  置信度过 `MIN_CONFIDENCE=0.65` 后 `ModelRouter` 直接采用，不再问云端。
+- 修复（[IntentPlanner.java](../../agent/src/main/java/com/agentruntime/intent/IntentPlanner.java#L70-L107)）：
+  `open_clock` 意图只有在目标句真的出现时钟类词（时钟/闹钟/计时/clock/alarm）时才允许直接出任务，
+  否则返回 null 让位给上层真实规划。
+- 验证：新增 [IntentPlannerGuardTest.java](../../agent/src/test/java/com/agentruntime/intent/IntentPlannerGuardTest.java)
+  `tests=2 failures=0 errors=0`；JVM 全量 **308/308** 通过。
+  **设备端复验（重装 APK 后重跑 B03/B04）未执行**——本轮模拟器在宿主 4GB 限制下不稳定，已关闭，等待下一轮。
+
+#### 问题 88：执行了错误的应用仍报 SUCCESS（未修复）
+- 现象：B03/B04 前台是 `com.android.deskclock`，任务 `status=SUCCESS`。
+- 原因：`sys.open_clock` 自身的 `assert_state` 只断言"时钟界面出现"，任务级没有校验
+  "最终前台包是否等于目标包"；规划层错了，执行层照旧通过。
+- 建议（下一步）：在 `TaskRunner` 收尾处对含 `allowed_apps` 的任务做前台包核对，
+  不一致则 `TASK_TARGET_MISMATCH`。涉及面比本轮范围大，未实施。
+
+### 本地小模型的作用（本轮实测证据 + 代码依据）
+
+| 层 | 实现 | 位置 | 延迟/成本 | 能做什么、不能做什么 |
+|---|---|---|---|---|
+| L0 规则 | `LocalRulePlanner` 关键词/模板 | [LocalRulePlanner.java](../../agent/src/main/java/com/agentruntime/planner/LocalRulePlanner.java) | ~0ms | 固定说法；换说法即失效 |
+| **L0.5 内置意图模型** | **17KB 朴素贝叶斯（字符 uni/bi-gram，12 意图，阈值 0.65）** | `assets/models/intent_nb.json` + [IntentModel.java](../../agent/src/main/java/com/agentruntime/intent/IntentModel.java) | 毫秒级、**完全离线** | 单句→单技能；复合句/带字面量载荷会被 `ModelRouter` 主动跳过；**不认识实体（本轮问题 87）** |
+| L0.5 决策器 | `JevDecider`：552B 线性模型（10 特征） | `assets/models/jev_decider.json` | 微秒级 | 在候选节点里挑一个（System-1），不做规划 |
+| L1 本地决策模型 | `LocalModelRegistry`：HTTP(127.0.0.1) / ONNX 后端，默认 `NONE` | [LocalModelRegistry.java](../../agent/src/main/java/com/agentruntime/local/LocalModelRegistry.java) | 1~3s | 与云端同一套提示词与 Schema 校验；失败回退云端；**默认未启用** |
+| L4 视觉 | SmolVLM 权重外置（~573MB，不进 APK） | [SmolVlmStore.java](../../agent/src/main/java/com/agentruntime/vision/vlm/SmolVlmStore.java) | — | 权重未就位时不可用 |
+
+实测（`verification/local_model/M01–M07`，未配置任何云端密钥）：
+```
+M01 截个图            SUCCESS  2040ms  intent=1  → sys.screenshot
+M02 把它截下来        SUCCESS  2915ms  intent=2  → sys.screenshot（规则命中不了，小模型泛化兜住）
+M03 看看现在屏幕上有什么 SUCCESS 1772ms  intent=3  → sys.observe
+M04 打开时钟          FAILED  37063ms  rule=1    → sys.open_clock 执行期 WAIT_TIMEOUT（当时 SystemUI ANR 挡在前台）
+M05 帮我打开闹钟应用   FAILED  36284ms  rule=2    → 同上
+M06 打开时钟然后截个图 FAILED  35534ms  rule=3    → 规则层先命中 open_clock（复合目标未被拦下），执行期超时
+M07 帮我把手机的飞行模式关掉 ERROR            → "no planner available (local rules miss, local model unconfigured, cloud unconfigured)"
+```
+结论（可直接对外表述）：
+1. **本地小模型是"省钱省时的第一道闸门"**：日常单句目标（截图/观察/打开时钟）在设备内毫秒级解决，
+   屏幕内容不出设备，也不产生云端费用；本轮 M01–M03 三条全离线跑通。
+2. **它是分级路由的一环，不是唯一依赖**：本地输出不合规/置信度不足就往上丢，最终由云端补齐；
+   因此小模型弱一点不会拖垮整体成功率，但**必须把它的误判挡在入口**（问题 87 就是反例）。
+3. **它的能力边界是"分类"，不是"规划"**：只做单句→单技能映射，不认识应用实体、
+   不处理复合目标、不提取复杂参数。任何"打开 X 应用 / 先 A 再 B"的目标都应由上层真实规划承担。
+4. 与之配套的 `JevDecider` 负责"选哪个控件"，`L1/L4` 是可选增强（默认关闭），
+   端侧大模型权重不进 APK，需用户自行放置。
+
+### 最终修改结果
+**本次完成：**
+- 下载并安装 4 个真实第三方应用（F-Droid / NewPipe / Aurora Store / AntennaPod），全部可启动；
+- 新增 `verification/market_app_ops.sh`（云端配置落盘 → B 系列 4 用例 → 截图留证）、
+  `verification/local_model_demo.sh`（M 系列 7 用例，全程离线）；
+- 修复内置意图模型 `open_clock` 实体盲区 + 新增 2 个单测；
+- 重新构建 `apk/agent-debug.apk`（37MB，与当前源码一致）。
+
+**涉及文件：**
+- `agent/src/main/java/com/agentruntime/intent/IntentPlanner.java`
+- `agent/src/test/java/com/agentruntime/intent/IntentPlannerGuardTest.java`（新增）
+- `verification/market_app_ops.sh`（新增）
+- `verification/local_model_demo.sh`（新增）
+- `verification/apks/*.apk`（4 个第三方 APK，新增）
+- `verification/market_apps/*.json|png`、`verification/local_model/*.json`（结果与截图）
+- `README.md`、`docs/PROJECT_CHANGELOG.md`
+
+**关键参数/配置变化：**
+- 模拟器启动参数：`-memory 1536` → `-memory 2048 -cores 2`（客体内存被强制抬到 2048；减 vCPU 换稳定）
+- 意图通道护栏阈值语义：`open_clock` 必须出现时钟类词（无新增数值阈值）
+
+### 验证情况
+- 编译：通过（`gradle :agent:assembleDebug :agenttestapp:assembleDebug`，JDK 17 + Gradle 8.14.6）；
+- 单元测试：**308/308 通过，0 失败 0 错误**（新增 `IntentPlannerGuardTest` 2/2）；
+- 实机测试：4 个应用安装/启动通过；B 系列 4 用例中 1 FAILED（如实）、2 SUCCESS 但目标错误（问题 87/88）、1 SUCCESS；
+- 本地模型离线演示：M01–M03 SUCCESS、M04–M06 受 SystemUI ANR 影响 FAILED、M07 明确 ERROR；
+- **护栏修复后的设备端复验：尚未执行**（模拟器不稳定已关闭）。
+- 代码修改已完成；设备端复验待下一轮。
+
+### 当前状态
+`部分完成：应用下载与安装 4/4、离线本地模型证据齐备；实体盲区已修复且单测通过；设备端复验与目标包后置校验待下一轮`
+
