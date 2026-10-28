@@ -633,7 +633,7 @@ agentruntime/
 │   │   ├── state/             状态引擎
 │   │   └── service/           无障碍服务（含音量键唤起）
 │   ├── src/main/res/          12 个布局（含 layout-land）+ 26 个 drawable
-│   ├── src/main/assets/skills/   23 个技能 JSON
+│   ├── src/main/assets/skills/   28 个技能 JSON
 │   ├── src/main/assets/models/   intent_nb.json（17KB）+ jev_decider.json（552B）
 │   └── src/test/java/            141 项单测（7 项布局结构 + 2 项视图树导出）
 ├── agenttestapp/              测试替身应用

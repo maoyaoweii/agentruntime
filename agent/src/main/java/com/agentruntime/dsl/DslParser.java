@@ -318,12 +318,19 @@ public final class DslParser {
                 }
                 break;
             }
-            case WRITE_FILE: {
+            case WRITE_FILE:
+            case APPEND_FILE: {
                 if (isEmpty(params.optString("path", null))) {
-                    throw new JSONException("write_file requires params.path");
+                    throw new JSONException(type.wireName() + " requires params.path");
                 }
                 if (!params.has("content")) {
-                    throw new JSONException("write_file requires params.content");
+                    throw new JSONException(type.wireName() + " requires params.content");
+                }
+                break;
+            }
+            case DELETE_FILE: {
+                if (isEmpty(params.optString("path", null))) {
+                    throw new JSONException("delete_file requires params.path");
                 }
                 break;
             }

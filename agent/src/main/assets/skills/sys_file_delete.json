@@ -1,0 +1,13 @@
+{
+  "skill_id": "sys.file_delete",
+  "version": "1.0",
+  "args": ["path"],
+  "risk": "MEDIUM",
+  "confirmation": "none",
+  "max_retries": 0,
+  "recovery": "none",
+  "postconditions": [],
+  "steps": [
+    {"action": "delete_file", "params": {"path": "${path}"}, "risk": "HIGH"}
+  ]
+}

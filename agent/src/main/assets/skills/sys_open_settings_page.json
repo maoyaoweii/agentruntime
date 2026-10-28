@@ -1,0 +1,15 @@
+{
+  "skill_id": "sys.open_settings_page",
+  "version": "1.0",
+  "target_package": "com.android.settings",
+  "args": ["page"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "page 取 wifi/network/bluetooth/display/sound/apps/privacy/location/battery/accessibility/developer；也接受中文与自然说法（网络/网络和互联网/蓝牙/显示/声音/应用/隐私/位置/电池/无障碍/开发者），由 SystemBridge 归一化",
+  "postconditions": [],
+  "steps": [
+    {"action": "open_settings_page", "params": {"page": "${page}"}, "timeout_ms": 20000},
+    {"action": "wait_for", "params": {"package": "com.android.settings"}, "timeout_ms": 30000}
+  ]
+}

@@ -154,9 +154,13 @@ public final class CloudPlannerAdapter {
                 + "必须使用 agent_test.* 技能，禁止用 web.find_text/web.click_selector 代替原生 UI 操作；"
                 + "sys.* 只用于设备级动作（剪贴板/截图/时钟/媒体/观察）；sys.ui_launch_tap 是通用应用内原语，不在此限；"
                 + "其余 sys.* 不能代替应用内操作；"
-                // AgentTestApp 有专用技能，其它第三方应用没有：只能用通用「启动+按可见文字点击」原语
-                + "非 AgentTestApp 的第三方应用（如 org.fossify.notes、org.fossify.clock）没有专用技能时，"
+                // AgentTestApp 有专用技能，其它应用没有：只能用通用「启动+按可见文字点击」原语
+                + "非 AgentTestApp 的应用没有专用技能时，"
                 + "用 sys.ui_launch_tap：args 为 app_package（该 App 的包名）与 text（界面上真实可见的文字），"
+                // 系统设置是唯一有专用技能的系统应用，别让模型用网页技能去模拟设置页
+                + "目标是系统设置里的某一页（网络/Wi-Fi/蓝牙/显示/电池/应用/隐私/开发者…）时，"
+                + "必须用 sys.open_settings_page（args: page），禁止用 web.* 打开本地 html 去模拟设置界面；"
+                + "web.* 只用于目标明确要求浏览网页或本地页面；"
                 // 目标常是中文、第三方 App 界面常是英文：单个字面量匹配不到，必须给多候选
                 + "text 请写成 3~5 个候选、用 | 分隔（该 App 可能的中英文标签都写上，"
                 + "例如 新建|New note|Create a new note），执行时命中任一候选即可；"
@@ -179,10 +183,11 @@ public final class CloudPlannerAdapter {
                 + "limits.max_steps 至少 24，timeout_seconds 至少 180。";
         // 设备上实际装了哪些第三方应用必须由本机告知：只靠模型猜包名会产出不存在的包，
         // launch_app 直接 APP_NOT_ALLOWED / 启动失败。
-        String apps = installedThirdPartyApps();
+        String apps = installedLaunchableApps();
         if (!apps.isEmpty()) {
-            system += "\n设备已安装的第三方应用（应用名=包名）：" + apps
-                    + "。目标里说到某个应用时，必须使用这里给出的包名，不要凭猜测造包名。";
+            system += "\n设备上可启动的应用（应用名=包名，含系统应用）：" + apps
+                    + "。目标里说到某个应用时，必须使用这里给出的包名，不要凭猜测造包名；"
+                    + "清单里没有的应用就是没装，不要凭空编一个。";
         }
         String user = "目标：" + goal + "\n可用 skill（括号内为必填参数名，args 必须给全）："
                 + (catalog != null ? catalog : skills) + "\n设备权限：" + permissions
@@ -240,27 +245,52 @@ public final class CloudPlannerAdapter {
     }
 
     /**
-     * 已安装的第三方应用（排除系统应用与 Agent 自身），格式「应用名=包名」。
-     * 只作为规划上下文，最多列 12 个，避免提示词膨胀。
+     * 设备上「可以打开」的应用清单（应用名=包名）。
+     *
+     * <p>只列第三方是不够的：实测「打开日历」「打开文件管理」时模型会去猜
+     * {@code org.fossify.calendar} 这种并不存在的包（那是上一轮装过的应用），
+     * 因为系统应用一个都没告诉它。所以这里改为枚举**有启动器入口的应用**，
+     * 第三方排在前面（它们才是大多数任务的目标），系统应用跟在后面。
+     *
+     * <p>用 launcher intent 而不是 {@code getInstalledApplications}：后者会带进
+     * 一堆没有界面的 provider/服务，塞进提示词只会干扰模型。
      */
-    private String installedThirdPartyApps() {
+    private String installedLaunchableApps() {
         try {
             android.content.pm.PackageManager pm = context.getPackageManager();
+            android.content.Intent launcher = new android.content.Intent(
+                    android.content.Intent.ACTION_MAIN)
+                    .addCategory(android.content.Intent.CATEGORY_LAUNCHER);
+            java.util.List<android.content.pm.ResolveInfo> ris =
+                    pm.queryIntentActivities(launcher, 0);
+            if (ris == null) return "";
+            java.util.List<android.content.pm.ResolveInfo> ordered = new java.util.ArrayList<>(ris);
+            ordered.sort((a, b) -> Boolean.compare(isSystemApp(a), isSystemApp(b)));
+
             StringBuilder sb = new StringBuilder();
+            java.util.Set<String> seen = new java.util.HashSet<>();
             int n = 0;
-            for (android.content.pm.ApplicationInfo ai : pm.getInstalledApplications(0)) {
-                if ((ai.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) continue;
-                if (context.getPackageName().equals(ai.packageName)) continue;
-                if (n >= 12) break;
-                CharSequence label = pm.getApplicationLabel(ai);
+            for (android.content.pm.ResolveInfo ri : ordered) {
+                if (ri.activityInfo == null) continue;
+                String pkg = ri.activityInfo.packageName;
+                if (context.getPackageName().equals(pkg)) continue;
+                if (!seen.add(pkg)) continue;
+                if (n >= 18) break;
+                CharSequence label = ri.loadLabel(pm);
                 if (sb.length() > 0) sb.append('、');
-                sb.append(label).append('=').append(ai.packageName);
+                sb.append(label).append('=').append(pkg);
                 n++;
             }
             return sb.toString();
         } catch (RuntimeException e) {
             return "";
         }
+    }
+
+    private static boolean isSystemApp(android.content.pm.ResolveInfo ri) {
+        return ri.activityInfo != null && ri.activityInfo.applicationInfo != null
+                && (ri.activityInfo.applicationInfo.flags
+                & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0;
     }
 
     private static String extractJson(String content) {

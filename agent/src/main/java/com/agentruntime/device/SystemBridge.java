@@ -56,6 +56,9 @@ public final class SystemBridge {
     /** 支持的设置页。 */
     private static final String[][] SETTINGS_PAGES = {
             {"wifi", Settings.ACTION_WIFI_SETTINGS},
+            // "网络和互联网"是一个聚合页，和 Wi-Fi 页不是同一个入口；
+            // 模型说"打开网络设置"时真正想看的是这一页。
+            {"network", Settings.ACTION_WIRELESS_SETTINGS},
             {"bluetooth", Settings.ACTION_BLUETOOTH_SETTINGS},
             {"display", Settings.ACTION_DISPLAY_SETTINGS},
             {"sound", Settings.ACTION_SOUND_SETTINGS},
@@ -257,12 +260,46 @@ public final class SystemBridge {
 
     // --------------------------------------------------------- 设置页
 
+    /** 自然语言/中文别名 → 规范页名。模型写的是意图，不是枚举值。 */
+    private static final String[][] PAGE_ALIASES = {
+            {"网络", "network"}, {"网络和互联网", "network"}, {"互联网", "network"},
+            {"internet", "network"}, {"networks", "network"},
+            // 模型常把枚举写成 snake_case（实测 page=network_and_internet）
+            {"network and internet", "network"}, {"network internet", "network"},
+            {"wireless", "network"},
+            {"无线", "wifi"}, {"无线网络", "wifi"}, {"wlan", "wifi"},
+            {"蓝牙", "bluetooth"}, {"显示", "display"}, {"屏幕", "display"},
+            {"声音", "sound"}, {"音量", "sound"}, {"应用", "apps"}, {"应用管理", "apps"},
+            {"隐私", "privacy"}, {"位置", "location"}, {"定位", "location"},
+            {"电池", "battery"}, {"电量", "battery"},
+            {"无障碍", "accessibility"}, {"辅助功能", "accessibility"},
+            {"开发者", "developer"}, {"开发者选项", "developer"},
+    };
+
+    /** 把用户/模型给的页名收敛到规范别名；认不出来返回 null。 */
+    private static String canonicalPage(String page) {
+        if (page == null) return null;
+        // 下划线/连字符统一成空格，再压掉重复空格：network_and_internet → network and internet
+        String p = page.trim().toLowerCase().replace('_', ' ').replace('-', ' ')
+                .replaceAll("\\s+", " ").trim();
+        if (p.isEmpty()) return null;
+        // 规范名本身也按下划线写在 SETTINGS_PAGES 里（如 accessibility），先做精确匹配
+        for (String[] pair : SETTINGS_PAGES) {
+            if (pair[0].equalsIgnoreCase(p)) return pair[0];
+        }
+        for (String[] alias : PAGE_ALIASES) {
+            if (alias[0].equalsIgnoreCase(p)) return alias[1];
+        }
+        return null;
+    }
+
     public ExecResult openSettingsPage(String page) {
         long start = System.currentTimeMillis();
+        String canonical = canonicalPage(page);
         String action = null;
-        if (page != null) {
+        if (canonical != null) {
             for (String[] pair : SETTINGS_PAGES) {
-                if (pair[0].equalsIgnoreCase(page.trim())) {
+                if (pair[0].equals(canonical)) {
                     action = pair[1];
                     break;
                 }
@@ -275,7 +312,7 @@ public final class SystemBridge {
         try {
             Intent i = new Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(i);
-            return ExecResult.ok("SETTINGS_OPENED", page, 0, elapsed(start));
+            return ExecResult.ok("SETTINGS_OPENED", canonical, 0, elapsed(start));
         } catch (Throwable t) {
             return ExecResult.fail("SETTINGS_OPEN_FAILED", String.valueOf(t.getMessage()), 0, elapsed(start));
         }
@@ -422,6 +459,20 @@ public final class SystemBridge {
         }
     }
 
+    /**
+     * 把"这条路径当前不可用"翻成结构化拒绝；可用时返回 null。
+     *
+     * <p>抽出来是因为读写/追加/删除四个入口都要做同一套判断——复制四遍之后，
+     * 改一处边界条件必然漏掉三处。
+     */
+    private ExecResult storageBlocked(File f) {
+        String issue = sharedStorageIssue(f);
+        if (issue == null) return null;
+        // 前缀 NEED_PERMISSION: 让上层转成"去申请权限"的引导，而不是笼统失败。
+        return ExecResult.reject(issue.startsWith("NEED_PERMISSION") ? "NEED_PERMISSION" : "SCOPED_STORAGE",
+                issue, 0);
+    }
+
     public ExecResult readFile(String path, int maxBytes) {
         long start = System.currentTimeMillis();
         File f = resolveSafe(path);
@@ -429,12 +480,8 @@ public final class SystemBridge {
             return ExecResult.reject("PATH_NOT_ALLOWED",
                     "allowed roots: app private dir, app external dir, shared storage", 0);
         }
-        String issue = sharedStorageIssue(f);
-        if (issue != null) {
-            // 前缀 NEED_PERMISSION: 让上层转成"去申请权限"的引导，而不是笼统失败。
-            return ExecResult.reject(issue.startsWith("NEED_PERMISSION") ? "NEED_PERMISSION" : "SCOPED_STORAGE",
-                    issue, 0);
-        }
+        ExecResult blocked = storageBlocked(f);
+        if (blocked != null) return blocked;
         if (!f.exists() || !f.isFile()) {
             return ExecResult.fail("FILE_NOT_FOUND", "file does not exist in the allowed area",
                     0, elapsed(start));
@@ -470,11 +517,8 @@ public final class SystemBridge {
             return ExecResult.reject("PATH_NOT_ALLOWED",
                     "allowed roots: app private dir, app external dir, shared storage", 0);
         }
-        String issue = sharedStorageIssue(f);
-        if (issue != null) {
-            return ExecResult.reject(issue.startsWith("NEED_PERMISSION") ? "NEED_PERMISSION" : "SCOPED_STORAGE",
-                    issue, 0);
-        }
+        ExecResult blocked = storageBlocked(f);
+        if (blocked != null) return blocked;
         try {
             File parent = f.getParentFile();
             if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -490,6 +534,101 @@ public final class SystemBridge {
             return ExecResult.fail("FILE_WRITE_FAILED",
                     "file write failed (" + t.getClass().getSimpleName() + ")", 0, elapsed(start));
         }
+    }
+
+    /**
+     * 追加写入：在已有文件末尾追加内容，文件不存在时创建。
+     *
+     * <p>这是"修改文件"的语义——覆盖写会丢掉原有内容，而用户要的往往是把新的一行
+     * 记到已有文件后面。两者分成两个动作，而不是给 write_file 加一个布尔开关：
+     * 布尔值默认为 false 时，模型很容易漏传就变成整文件覆盖。
+     */
+    public ExecResult appendFile(String path, String content) {
+        long start = System.currentTimeMillis();
+        File f = resolveSafe(path);
+        if (f == null) {
+            return ExecResult.reject("PATH_NOT_ALLOWED",
+                    "allowed roots: app private dir, app external dir, shared storage", 0);
+        }
+        ExecResult blocked = storageBlocked(f);
+        if (blocked != null) return blocked;
+        if (f.exists() && !f.isFile()) {
+            return ExecResult.reject("NOT_A_FILE", "append target is not a regular file", 0);
+        }
+        try {
+            File parent = f.getParentFile();
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                return ExecResult.fail("MKDIR_FAILED", "parent directory could not be created",
+                        0, elapsed(start));
+            }
+            byte[] data = (content == null ? "" : content).getBytes(StandardCharsets.UTF_8);
+            boolean existed = f.exists();
+            try (FileOutputStream out = new FileOutputStream(f, true)) {
+                out.write(data);
+            }
+            return ExecResult.ok(existed ? "FILE_APPENDED" : "FILE_CREATED",
+                    data.length + " bytes -> " + f.getName() + " (" + f.length() + "B total)",
+                    0, elapsed(start));
+        } catch (Throwable t) {
+            return ExecResult.fail("FILE_APPEND_FAILED",
+                    "file append failed (" + t.getClass().getSimpleName() + ")", 0, elapsed(start));
+        }
+    }
+
+    /**
+     * 删除文件。
+     *
+     * <p>刻意只删"单个普通文件"：不做递归删目录、不允许删任何允许根目录本身。
+     * 一个 DELETE 动作如果能把 /sdcard 或 app 私有目录整个抹掉，那就不是工具而是事故；
+     * 需要批量清理时应该由上层显式列文件再逐个删，每一步都可审计。
+     */
+    public ExecResult deleteFile(String path) {
+        long start = System.currentTimeMillis();
+        File f = resolveSafe(path);
+        if (f == null) {
+            return ExecResult.reject("PATH_NOT_ALLOWED",
+                    "allowed roots: app private dir, app external dir, shared storage", 0);
+        }
+        ExecResult blocked = storageBlocked(f);
+        if (blocked != null) return blocked;
+        if (isRoot(f)) {
+            return ExecResult.reject("REFUSE_ROOT_DELETE", "refusing to delete an allowed root", 0);
+        }
+        if (f.isDirectory()) {
+            return ExecResult.reject("REFUSE_DIRECTORY_DELETE",
+                    "delete_file only removes a single file; recursive directory delete is not allowed", 0);
+        }
+        if (!f.exists()) {
+            return ExecResult.fail("FILE_NOT_FOUND", "file does not exist in the allowed area",
+                    0, elapsed(start));
+        }
+        long size = f.length();
+        try {
+            if (!f.delete()) {
+                return ExecResult.fail("FILE_DELETE_FAILED", "delete returned false (file still exists)",
+                        0, elapsed(start));
+            }
+        } catch (Throwable t) {
+            return ExecResult.fail("FILE_DELETE_FAILED",
+                    "file delete failed (" + t.getClass().getSimpleName() + ")", 0, elapsed(start));
+        }
+        if (f.exists()) {
+            return ExecResult.fail("FILE_DELETE_FAILED", "file still exists after delete",
+                    0, elapsed(start));
+        }
+        return ExecResult.ok("FILE_DELETED", size + " bytes removed -> " + f.getName(), 0, elapsed(start));
+    }
+
+    /** 是否是某个允许根目录本身（删除这类路径一律拒绝）。 */
+    private boolean isRoot(File f) {
+        for (File root : allowedRoots()) {
+            if (root == null) continue;
+            try {
+                if (root.getCanonicalPath().equals(f.getCanonicalPath())) return true;
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
     }
 
     // ------------------------------------------------------------- 其它

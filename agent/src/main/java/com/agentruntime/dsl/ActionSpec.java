@@ -20,6 +20,8 @@ public final class ActionSpec {
         // --- V1.3 新增：系统底层工具 ---
         SET_VOLUME, GET_VOLUME, SET_BRIGHTNESS, CLIPBOARD_SET, CLIPBOARD_GET,
         MEDIA_KEY, VIBRATE, OPEN_SETTINGS_PAGE, LIST_APPS, READ_FILE, WRITE_FILE,
+        // --- V1.8 新增：文件修改（追加）与删除 ---
+        APPEND_FILE, DELETE_FILE,
         // --- V1.3 新增：输入法注入通道 ---
         IME_COMMIT, IME_READ, IME_KEY;
 
@@ -64,6 +66,8 @@ public final class ActionSpec {
                 case "list_apps": return LIST_APPS;
                 case "read_file": return READ_FILE;
                 case "write_file": return WRITE_FILE;
+                case "append_file": return APPEND_FILE;
+                case "delete_file": return DELETE_FILE;
                 case "ime_commit": return IME_COMMIT;
                 case "ime_read": return IME_READ;
                 case "ime_key": return IME_KEY;
@@ -110,6 +114,8 @@ public final class ActionSpec {
                 case LIST_APPS: return "list_apps";
                 case READ_FILE: return "read_file";
                 case WRITE_FILE: return "write_file";
+                case APPEND_FILE: return "append_file";
+                case DELETE_FILE: return "delete_file";
                 case IME_COMMIT: return "ime_commit";
                 case IME_READ: return "ime_read";
                 case IME_KEY: return "ime_key";

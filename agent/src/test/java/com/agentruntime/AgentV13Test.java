@@ -245,7 +245,17 @@ public class AgentV13Test {
 
     @Test
     public void actionCountMatchesDocumentation() {
-        assertEquals("动作原语总数应为 40", 40, ActionSpec.ActionType.values().length);
+        // 41 = V1.3 的 40 个原语 + V1.8 新增 append_file；delete_file 紧随其后。
+        // 数字变更是刻意行为，改这里必须同时确认没有把原语静默删掉。
+        assertEquals("动作原语总数应为 42", 42, ActionSpec.ActionType.values().length);
+    }
+
+    @Test
+    public void fileMutationActionsRoundTrip() throws Exception {
+        String[] names = {"append_file", "delete_file"};
+        for (String n : names) {
+            assertEquals(n, ActionSpec.ActionType.fromString(n).wireName());
+        }
     }
 
     @Test

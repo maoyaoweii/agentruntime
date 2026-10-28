@@ -1,0 +1,16 @@
+{
+  "skill_id": "sys.file_ops",
+  "version": "1.1",
+  "args": ["path"],
+  "risk": "MEDIUM",
+  "confirmation": "none",
+  "max_retries": 1,
+  "recovery": "none",
+  "postconditions": [],
+  "steps": [
+    {"action": "write_file", "params": {"path": "${path}", "content": "L1_CREATED_BY_AGENT\n"}},
+    {"action": "read_file", "params": {"path": "${path}", "max_bytes": 4096}},
+    {"action": "append_file", "params": {"path": "${path}", "content": "L2_MODIFIED_BY_AGENT\n"}, "risk": "MEDIUM"},
+    {"action": "read_file", "params": {"path": "${path}", "max_bytes": 4096}}
+  ]
+}

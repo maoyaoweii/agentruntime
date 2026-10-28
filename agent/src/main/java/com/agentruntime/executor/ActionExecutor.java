@@ -398,6 +398,20 @@ public final class ActionExecutor {
                         : sys.writeFile(spec.param("path"), spec.param("content"));
                 break;
             }
+            case APPEND_FILE: {
+                com.agentruntime.device.SystemBridge sys = systemBridge();
+                result = sys == null
+                        ? ExecResult.reject("CAPABILITY_MISSING", "system bridge not attached", epoch)
+                        : sys.appendFile(spec.param("path"), spec.param("content"));
+                break;
+            }
+            case DELETE_FILE: {
+                com.agentruntime.device.SystemBridge sys = systemBridge();
+                result = sys == null
+                        ? ExecResult.reject("CAPABILITY_MISSING", "system bridge not attached", epoch)
+                        : sys.deleteFile(spec.param("path"));
+                break;
+            }
             // ------------------------------------------ V1.3 输入法注入通道
             case IME_COMMIT: {
                 result = doImeCommit(spec, epoch, start);

@@ -4,12 +4,16 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 19] 2026-10-25 - 推送到 GitHub 仓库 `xianshengl487-star/agentruntime`（private）**。
-> 本地提交 `5b04f07` 已推送为远端 `main`，本地/远端 SHA 一致，分支跟踪 `origin/main` 已建立。
-> 上一轮：[任务 18] 权限逐个申请 + 共享存储读写 + 换用完整 AOSP 真实系统镜像。
-> 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/permission_flow_real_aosp_20261025.mp4`、
+> 最新一轮见文末 **[任务 20] 2026-10-28 - 本地文件修改/删除能力 + 真实系统应用操控**。
+> 新增 `append_file`（修改）与 `delete_file`（删除）动作原语（40 → 42），删除带三重护栏
+> （只删单文件 / 拒删目录 / 拒删根目录，删后复查）；规划提示词改为下发**设备上可启动的应用**
+> 真实包名（含系统应用），并新增 `sys.open_settings_page` / `sys.file_ops` / `sys.file_delete`
+> 三个技能（技能 28 个）。实测：本地文件 6/6（含 run-as 外部磁盘校验）、
+> 真实系统应用 4/4（Settings / DeskClock / Calendar / DocumentsUI），JVM 全量 306/306 通过。
+> 上一轮：[任务 19] 推送到 GitHub 仓库 `xianshengl487-star/agentruntime`（private）。
+> 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/real_app_control_20261028.mp4`、
+> `verification/recordings/permission_flow_real_aosp_20261025.mp4`、
 > `verification/recordings/overlay_task_panel_20261025.mp4`、
-> `verification/recordings/cloud_real_plan_realtime_20261025.mp4`、
 > `verification/recordings/third_party_real_plan_20261025.mp4`。
 
 ## 当前目标
@@ -2381,3 +2385,184 @@ GitHub App 集成令牌（按仓库安装范围授权），而非带 `repo` scop
 
 ### 当前状态
 `完成：代码 / APK / 验证证据 / 工程日志已全部推送至 GitHub，本地与远端一致`
+
+---
+
+## [任务 20] 2026-10-28 - 本地文件修改/删除能力 + 真实系统应用操控
+
+### 本次目标
+1. **实际软件上做软件操控**：不是在自研 AgentTestApp 里跑，而是在 AOSP 内置应用
+   （Settings / DeskClock / Calendar / DocumentsUI）上真实操作。
+2. **本地文件修改、删除**：在原来 `write_file`（覆盖写）之外补上「追加修改」与「删除」，
+   并且真实落盘可被外部核对。
+
+### 修改前状态
+- 文件能力只有 `read_file` / `write_file`（整文件覆盖），没有追加、没有删除。
+- 云端规划的提示词里只列出**第三方**应用包名，系统应用一个都没有 →
+  实测模型会凭猜测写 `org.fossify.calendar`（上一轮装过的包）或
+  `org.fossify.filemanager`，直接 `APP_NOT_FOUND`。
+- 没有暴露 `open_settings_page` 的技能：`SystemBridge` 支持 10 个设置页，
+  但模型无从调用，于是「打开系统设置」被规划成 `web.browse_local_page` 打开本地 html。
+- 模型常把「打开应用」拆成单独一步，用应用名当点击目标 → 首步必然 `WAIT_TIMEOUT`，
+  进而触发重规划，而重规划更离谱（实测转成 web.* 计划）。
+
+### 修改记录
+
+#### 修改 1：新增文件修改与删除动作（`ActionSpec` / `DslParser` / `ActionExecutor`）
+- `ActionType` 新增 `APPEND_FILE`、`DELETE_FILE`（动作原语 40 → 42）。
+- `DslParser`：两者都要求 `path`，`append_file` 还需要 `content`。
+- `ActionExecutor` 转调 `SystemBridge.appendFile` / `deleteFile`。
+
+#### 修改 2：`SystemBridge` 实现追加与删除
+- `appendFile`：`FileOutputStream(f, true)` 追加；文件不存在时创建，
+  返回 `FILE_APPENDED`（已存在）或 `FILE_CREATED`（新建），并带上总字节数。
+- `deleteFile`：**只删单个普通文件**；拒绝删除任何允许根目录本身
+  （`REFUSE_ROOT_DELETE`），拒绝删目录（`REFUSE_DIRECTORY_DELETE`）；
+  删完再 stat 一次，仍在则报 `FILE_DELETE_FAILED`，不谎报成功。
+- 抽出 `storageBlocked(File)`，让读/写/追加/删除四条路径共用同一套
+  权限与分区存储判定，避免改一处漏三处。
+
+#### 修改 3：新增技能
+- `sys.file_ops`：write → read → append → read（创建 + 修改 + 读取）。
+- `sys.file_delete`：单独删除，步骤 risk=HIGH，未确认时由 RiskGate 拒绝（fail-safe）。
+- `sys.open_settings_page`：`target_package=com.android.settings`，
+  暴露设置页跳转（network/wifi/bluetooth/display/…/developer）。
+
+#### 修改 4：规划上下文补真实包名（`CloudPlannerAdapter`）
+- `installedThirdPartyApps()` → `installedLaunchableApps()`：改为枚举
+  **有启动器入口的应用**（第三方在前、系统应用在后，最多 18 个）。
+  模型现在能拿到 `日历=com.android.calendar`、`文件=com.android.documentsui` 这类真实包名。
+- system prompt 补两条硬约束：设置页必须用 `sys.open_settings_page`；
+  清单里没有的应用就是没装，禁止凭空编包名。
+
+#### 修改 5：设置页名归一化（`SystemBridge`）
+- 新增 `PAGE_ALIASES`（中英文 + 常见自然说法）与 `canonicalPage()`：
+  先按 `_`/`-`/空格归一，再做精确匹配与别名匹配。
+  实测模型写 `page=network_and_internet` → 归一成 `network and internet` → 命中 `network`。
+- `SETTINGS_PAGES` 增加 `network`（`ACTION_WIRELESS_SETTINGS`），
+  与 `wifi`（`ACTION_WIFI_SETTINGS`）区分开。
+
+#### 修改 6：丢弃冗余启动步（`ModelRouter.dropRedundantLaunchSteps`）
+- 相邻两步都是 `sys.ui_launch_tap` 且 `app_package` 相同时，删掉前一步。
+  理由：该技能本身已包含启动，后一步才是真正要点的控件；
+  保留前一步只会先超时 90s 再触发跑偏的重规划。
+- 命中时往 `TaskBus` 发一条 `plan` 事件，解释被丢弃了什么。
+
+### 遇到的问题
+
+#### 问题 81：完整 AOSP 镜像在 6GB / 4GB cgroup 下反复被 OOM 杀
+**现象**：`-memory 2048` 时 qemu 的 `anon-rss` 涨到 3.3~3.9GB，
+`dmesg` 报 `Memory cgroup out of memory: Killed process (qemu-system-x86)`；
+与 Gradle 并行时必被杀。
+**排查**：`/sys/fs/cgroup/memory.max = 4294967296`（4GB），
+而 2048MB 客体内存 + TCG 翻译缓存 + gfxstream 已接近上限。
+**解决**：客体内存降到 **1536MB**、关闭摄像头仿真（`-camera-back/front none`），
+RSS 稳定在 2.4GB；并规定**构建与模拟器不并行**——构建前先停实例。
+**结果**：已解决；本轮所有设备验证都在该配置下完成。
+
+#### 问题 82：环境重置后 Gradle / Robolectric 拉不到依赖
+**现象**：`Plugin [id: 'com.android.application', version: '8.6.1'] was not found`；
+修好插件后 Robolectric 又报
+`Failed to fetch maven artifact org.robolectric:android-all-instrumented:11-...`，
+305 个用例里 117 个失败。
+**根因**：系统盘跨轮重置后缓存清空；Maven Central 对本出口 IP 返回 **429 Too Many Requests**。
+**解决**：
+- `/root/.gradle/gradle.properties` 写 `systemProp.http(s).proxyHost/Port=127.0.0.1:18080`；
+- `/root/.gradle/init.gradle` 把 central 重定向到阿里云公共仓库镜像（沙箱专用，不在工程内）；
+- Robolectric 用 `JAVA_TOOL_OPTIONS=-Drobolectric.dependency.repo.url=https://maven.aliyun.com/repository/public`
+  指到同一镜像（它自己下载 android-all jar，不走 Gradle 仓库）。
+**结果**：已解决；全量 306 个 JVM 用例通过。
+
+#### 问题 83：「打开日历 → 上个月」在 AOSP Calendar 上无节点可点
+**现象**：`sys.ui_launch_tap` 连续 `WAIT_TIMEOUT`（90s×2）。
+**排查**：`uiautomator dump` 显示该界面只有 `top_button_date`（October 2026）
+与 `action_today`（Today），翻月是 ViewPager 手势，**视图树里没有任何节点**。
+**解决**：判定为能力边界而非缺陷——当前技能集只做节点级操作，不做手势翻页。
+用例改为「回到今天」（真实存在 `Today` 节点）。之后 `SUCCESS` 10904ms。
+**遗留**：手势翻页（swipe）尚未封装成技能，已记录为后续项。
+
+#### 问题 84：模型重复规划「打开应用」的冗余步，进而跑偏到 web.*
+**现象**：`sys.ui_launch_tap{calendar, "月|Month|日历"}` 首步超时 → 重规划成
+`web.browse_local_page{file:///android_asset/ui.html}` → `APP_NOT_ALLOWED`。
+**解决**：见修改 6（丢弃冗余启动步）+ 修改 4/5（给真实包名与设置页技能）。
+**结果**：已解决；A01/A02/A03/A04 四个真实应用用例全部 SUCCESS。
+
+### 最终修改结果
+
+**本次完成：**
+- 新增 `append_file`（修改）与 `delete_file`（删除）两个动作原语，动作总数 40 → 42
+- 删除具备三重护栏：只删单文件、拒绝删目录、拒绝删允许根目录，删后复查
+- 规划提示词补「设备上可启动的应用」真实包名列表（含系统应用）
+- 新增 `sys.open_settings_page` / `sys.file_ops` / `sys.file_delete` 三个技能（技能 28 个）
+- 设置页名支持中英文别名与 snake_case 归一
+- 丢弃冗余启动步，避免无意义超时与跑偏重规划
+- JVM 全量 **306/306 通过**
+
+**涉及文件：**
+- `agent/src/main/java/com/agentruntime/dsl/ActionSpec.java`
+- `agent/src/main/java/com/agentruntime/dsl/DslParser.java`
+- `agent/src/main/java/com/agentruntime/executor/ActionExecutor.java`
+- `agent/src/main/java/com/agentruntime/device/SystemBridge.java`
+- `agent/src/main/java/com/agentruntime/planner/CloudPlannerAdapter.java`
+- `agent/src/main/java/com/agentruntime/planner/ModelRouter.java`
+- `agent/src/main/assets/skills/sys_file_ops.json`（新增）
+- `agent/src/main/assets/skills/sys_file_delete.json`（新增）
+- `agent/src/main/assets/skills/sys_open_settings_page.json`（新增）
+- `agent/src/test/java/com/agentruntime/AgentV13Test.java`（动作数 40 → 42，补两个动作往返用例）
+- `agent/src/test/java/com/agentruntime/skill/SkillLoadingRegressionTest.java`（改为对 assets 实际文件数）
+- `verification/file_and_app_ops.sh`（新增：F 系列文件 + A 系列真实应用）
+- `README.md`（技能数 23 → 28）
+
+**关键参数/配置变化：**
+- 动作原语：40 → 42
+- 技能数：24 → 28（含 `sys.file_ops` / `sys.file_delete` / `sys.open_settings_page`）
+- 模拟器客体内存：2048MB → **1536MB**（并关闭摄像头仿真），RSS 3.9GB → 2.4GB
+- 新增设置页别名：`network`（`ACTION_WIRELESS_SETTINGS`）+ 中英文别名表
+
+### 验证情况
+
+- 编译：**通过**（`:agent:assembleDebug` BUILD SUCCESSFUL）
+- 单元测试：**306/306 通过，0 失败 0 错误**（含新增 `fileMutationActionsRoundTrip`）
+- 实机测试（完整 AOSP Android 11，TCG，1536MB）：**文件 6/6、真实应用 4/4**
+
+**F 系列：本地文件（含外部磁盘校验，不采信 Agent 自报）**
+```
+F01_file_create_modify_read  SUCCESS  4244ms
+    write_file OK/FILE_WRITTEN → read_file OK → append_file OK/FILE_APPENDED → read_file OK
+    外部校验：磁盘内容 = "L1_CREATED_BY_AGENT\nL2_MODIFIED_BY_AGENT"，41 bytes
+F02_file_delete              SUCCESS  2080ms   delete_file OK/FILE_DELETED
+    外部校验：GONE（磁盘上已不存在）
+F03_delete_missing           FAILED   FILE_NOT_FOUND
+F04_delete_root              FAILED   REFUSED  REFUSE_ROOT_DELETE
+F05_delete_dir               FAILED   REFUSED  REFUSE_DIRECTORY_DELETE
+F06_shared_storage           FAILED   REJECTED SCOPED_STORAGE（Android 11 分区存储，设计如此）
+```
+
+**A 系列：真实系统应用操控（云端 spark-x2.6 规划）**
+```
+A01_system_settings  SUCCESS 11045ms  cloud_calls=1  sys.open_settings_page OK
+A02_clock_stopwatch  SUCCESS 18485ms  cloud_calls=1  sys.open_clock OK
+A03_calendar_today   SUCCESS 10904ms  cloud_calls=3  sys.ui_launch_tap OK
+A04_documents_dl     SUCCESS 16816ms  cloud_calls=2  sys.ui_launch_tap OK
+```
+真实规划样本（logcat `CloudPlannerAdapter: plan steps`）：
+```
+open_settings_page{page:"network"}
+sys.open_clock
+sys.ui_launch_tap{com.android.calendar, "今天|Today"}
+sys.ui_launch_tap{com.android.documentsui, "Downloads|下载"}
+```
+
+- 录屏：`verification/recordings/real_app_control_20261028.mp4`（64.25s / 480×800 / 24fps / 105KB）
+- 关键帧：`real_app_46s.png`、`real_app_stopwatch.png`（真实 DeskClock，STOPWATCH 标签高亮）
+- 截图：`real_app_8s.png`、`real_app_24s.png`（Agent 让出前台后的桌面）
+- 结果 JSON：`verification/file_ops/F0*.json`、`A0*.json`
+
+**未验证 / 遗留：**
+- 手势级操作（翻月、翻页、滑动）未封装成技能 → AOSP Calendar 的「上个月」暂不可达
+- 共享目录写入在 Android 11+ 仍不可用（不申请 `MANAGE_EXTERNAL_STORAGE`，设计取舍）
+- 真机 ROM 未验证；Android 13/14 分支仅单测覆盖
+- 云端规划存在上游波动（2 次 `cloud planner transport failure` / `response rejected`，重试后成功）
+
+### 当前状态
+`完成：本地文件创建/修改/读取/删除 + 4 个真实系统应用操控均已实测通过，306 个 JVM 用例全绿`
