@@ -2691,7 +2691,7 @@ M07 帮我把手机的飞行模式关掉 ERROR            → "no planner availa
 - `agent/src/test/java/com/agentruntime/intent/IntentPlannerGuardTest.java`（新增）
 - `verification/market_app_ops.sh`（新增）
 - `verification/local_model_demo.sh`（新增）
-- `verification/apks/*.apk`（4 个第三方 APK，新增）
+- `verification/apks/*.apk`（4 个第三方 APK，新增；共 49MB，**不入库**，`.gitignore` 已排除，下载地址见本节下载表）
 - `verification/market_apps/*.json|png`、`verification/local_model/*.json`（结果与截图）
 - `README.md`、`docs/PROJECT_CHANGELOG.md`
 
@@ -2706,6 +2706,8 @@ M07 帮我把手机的飞行模式关掉 ERROR            → "no planner availa
 - 本地模型离线演示：M01–M03 SUCCESS、M04–M06 受 SystemUI ANR 影响 FAILED、M07 明确 ERROR；
 - **护栏修复后的设备端复验：尚未执行**（模拟器不稳定已关闭）。
 - 代码修改已完成；设备端复验待下一轮。
+- 交付推送：`adf4865` → GitHub `origin/main`（`https://github.com/xianshengl487-star/agentruntime`）；
+  推送完成后云端代理 `cloud_proxy.py`（端口 8900）与模拟器均已关闭，宿主无遗留进程。
 
 ### 当前状态
 `部分完成：应用下载与安装 4/4、离线本地模型证据齐备；实体盲区已修复且单测通过；设备端复验与目标包后置校验待下一轮`
