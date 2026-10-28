@@ -3013,4 +3013,6 @@ N02（重装复验）SUCCESS  steps=[('sys.notifications',True,['NOTIFICATIONS_L
 
 ### 收尾记录（2026-10-28）
 - 顶部「当前工程状态」已同步到本任务（原指向 [任务 22]）。
-- 模拟器已 `adb emu kill` 关闭，`pgrep -f qemu-system` 为 0，宿主空闲内存恢复 ~5GB；宿主 `cloud_proxy.py` 未在本轮启动。
+- 单测用 `--rerun-tasks` **强制重跑**：`tests=321 failures=0 errors=0 skipped=0`，BUILD SUCCESSFUL。
+- 提交：`22de6c8 V2.0: 通知读取 + 方向滑动 + 全局键扩展`（19 files, +794/−23），已推送 `origin/main`（`31d5399..22de6c8`）。
+- 模拟器已 `adb emu kill` 关闭，`pgrep -f qemu-system-x86_64` 为 0，宿主空闲内存恢复 ~5GB；宿主 `cloud_proxy.py` 未在本轮启动（`ss` 复核 8900/5554/5555 无监听）。
