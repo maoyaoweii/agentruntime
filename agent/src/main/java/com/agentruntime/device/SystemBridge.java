@@ -68,6 +68,9 @@ public final class SystemBridge {
             {"battery", Intent.ACTION_POWER_USAGE_SUMMARY},
             {"accessibility", Settings.ACTION_ACCESSIBILITY_SETTINGS},
             {"developer", Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS},
+            // 通知使用权 / 使用情况访问：都是系统特殊权限页，只能由用户手动开启。
+            {"notification_access", Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS},
+            {"usage_access", Settings.ACTION_USAGE_ACCESS_SETTINGS},
     };
 
     private final Context context;
@@ -274,6 +277,9 @@ public final class SystemBridge {
             {"电池", "battery"}, {"电量", "battery"},
             {"无障碍", "accessibility"}, {"辅助功能", "accessibility"},
             {"开发者", "developer"}, {"开发者选项", "developer"},
+            {"通知使用权", "notification_access"}, {"通知访问", "notification_access"},
+            {"notification listener", "notification_access"}, {"notification access", "notification_access"},
+            {"使用情况访问", "usage_access"}, {"usage access", "usage_access"},
     };
 
     /** 把用户/模型给的页名收敛到规范别名；认不出来返回 null。 */

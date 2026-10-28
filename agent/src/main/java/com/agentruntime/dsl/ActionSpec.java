@@ -25,7 +25,9 @@ public final class ActionSpec {
         // --- V1.3 新增：输入法注入通道 ---
         IME_COMMIT, IME_READ, IME_KEY,
         // --- V1.9 新增：按文本点击（找不到自动滚动） ---
-        TAP_TEXT;
+        TAP_TEXT,
+        // --- V2.0 新增：Android 原生手势与系统通知 ---
+        SWIPE, NOTIFICATIONS;
 
         public static ActionType fromString(String s) throws JSONException {
             if (s == null) throw new JSONException("action type is null");
@@ -74,6 +76,8 @@ public final class ActionSpec {
                 case "ime_read": return IME_READ;
                 case "ime_key": return IME_KEY;
                 case "tap_text": return TAP_TEXT;
+                case "swipe": return SWIPE;
+                case "notifications": return NOTIFICATIONS;
                 default:
                     throw new JSONException("action type not in whitelist: " + s);
             }
@@ -123,6 +127,8 @@ public final class ActionSpec {
                 case IME_READ: return "ime_read";
                 case IME_KEY: return "ime_key";
                 case TAP_TEXT: return "tap_text";
+                case SWIPE: return "swipe";
+                case NOTIFICATIONS: return "notifications";
                 default: return "recover";
             }
         }

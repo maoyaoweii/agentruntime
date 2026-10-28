@@ -1,0 +1,13 @@
+{
+  "skill_id": "sys.notifications",
+  "version": "2.0",
+  "target_package": null,
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "postconditions": [],
+  "steps": [
+    {"action": "notifications", "params": {"limit": 20}, "timeout_ms": 5000}
+  ]
+}

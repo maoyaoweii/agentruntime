@@ -267,7 +267,32 @@ public final class AgentAccessibilityService extends AccessibilityService {
             case "notifications": return GLOBAL_ACTION_NOTIFICATIONS;
             case "quick_settings": return GLOBAL_ACTION_QUICK_SETTINGS;
             case "power_dialog": return GLOBAL_ACTION_POWER_DIALOG;
+            // 锁屏与系统截图是平台全局动作，老系统没有对应常量入口，按版本诚实拒绝。
+            case "lock_screen":
+                return android.os.Build.VERSION.SDK_INT >= 28 ? GLOBAL_ACTION_LOCK_SCREEN : null;
+            case "screenshot":
+                return android.os.Build.VERSION.SDK_INT >= 30 ? GLOBAL_ACTION_TAKE_SCREENSHOT : null;
             default: return null;
+        }
+    }
+
+    /** 该全局按键要求的最低 API；未知按键返回 -1。 */
+    public static int minSdkOf(String key) {
+        if (key == null) return -1;
+        switch (key.trim().toLowerCase()) {
+            case "back":
+            case "home":
+            case "recents":
+            case "notifications":
+            case "quick_settings":
+            case "power_dialog":
+                return 16;
+            case "lock_screen":
+                return 28;
+            case "screenshot":
+                return 30;
+            default:
+                return -1;
         }
     }
 

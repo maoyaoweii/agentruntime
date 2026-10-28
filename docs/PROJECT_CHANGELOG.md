@@ -4,17 +4,16 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 22] 2026-10-28 - 任务 21 遗留三问题修复 + 按文本点击原语 + 实机复验**。
-> 三条修复全部在真实 AOSP 11 模拟器上复验通过：C01/C02（目标句点名真实应用不再被误判成 open_clock，
-> 同一次请求即落盘云端配置，问题 85）、C03（错误目标在派发前被 `APP_NOT_ALLOWED` 拦下）、
-> C04/C05（新增 `tap_text` / `launch_and_tap_text` 原语：按可见文本找节点→找不到自动滚动→点击，
-> 成功点进 NewPipe 抽屉里的 Settings，即 B01 失败点）、C06（跑错应用收尾返回 `TASK_TARGET_MISMATCH`，问题 88）。
-> JVM 全量 **318/318** 通过。上一轮：[任务 21] 常见应用下载/真机操控测试 + 本地小模型作用与护栏。
+> 最新一轮见文末 **[任务 23] 2026-10-28 - Android 原生能力增强（通知读取 / 方向滑动 / 全局键扩展）**。
+> V2.0 在原装 AOSP 11 模拟器上复验通过：N01/N02（`sys.notifications` 经 `NotificationListenerService`
+> 读到系统通知 → `sys.swipe` 走 `dispatchGesture` 原生手势上滑，落到 launcher 应用抽屉），
+> 动作原语 43→**45**、技能 30→**32**；JVM 全量 **321/321** 通过。
+> 上一轮：[任务 22] 任务 21 遗留三问题修复 + `tap_text` 按文本点击原语 + 实机复验（C01–C06 全绿）。
 > 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/real_app_control_20261028.mp4`、
 > `verification/recordings/permission_flow_real_aosp_20261025.mp4`、
 > `verification/recordings/overlay_task_panel_20261025.mp4`、
-> `verification/recordings/third_party_real_plan_20261025.mp4`；本轮设备证据：
-> `verification/hardening/C01..C06`（json/png/xml）。
+> `verification/recordings/third_party_real_plan_20261025.mp4`；设备证据：
+> `verification/hardening/C01..C06`（[任务 22]）、`verification/native/N01/N02`（[任务 23]，json/xml/audit）。
 
 ## 当前目标
 依据《Android_AI_Agent_Runtime项目立项与研发技术方案_V1.0.docx》，实现可安装的 Android Agent APK（含 State Engine、Action Executor、Skill Engine、Model Router、DeviceBridge、Assistant UI）与 AgentTestApp 测试应用，产出实物 APK，并在虚拟机（Android Emulator）上完成端到端验证，形成结构化测试报告。
@@ -34,6 +33,7 @@
 - **持续性验证（5 轮）与交付打包：`/workspace/AgentRuntime_V1.0_delivery.zip`（含 APK×2/脚本/结果/录屏/日志）**
 - **V1.7：Linux 无 KVM 下 TCG 部署真实模拟器成功；当前 APK 设备端验证（核心 6/6、浏览器 DOM 2/2、负例 3/3）；修复 4 项真机缺陷**
 - **V1.9（[任务 22]）：任务级目标核验（`TASK_TARGET_MISMATCH`）、云端配置同请求落盘、`tap_text`/`launch_and_tap_text` 按文本找+滚动+点原语；动作原语 42→43、技能 28→30；设备端 C01–C06 全绿、JVM 318/318**
+- **V2.0（[任务 23]）：系统级能力接入——`NotificationListenerService` 通知读取（`notifications`）、`dispatchGesture` 方向滑动（`swipe`）、`press_key` 扩 `lock_screen`/`screenshot`（按 API 版本诚实拒绝）、设置页扩通知/使用情况访问；动作原语 43→45、技能 30→32；设备端 N01/N02 全绿、JVM 321/321**
 
 ### 进行中
 - 无
@@ -54,10 +54,11 @@
 - 已解决：录屏全黑（根因见 [任务 15] 问题 72）；真实云规划成功率由 2/4 提升到 5/5；跑错应用误报 SUCCESS（[任务 22] 问题 88）；抽屉/首屏外节点点不到（[任务 22] B01）
 
 ### 下一步
-1. 在物理真机上复跑 `verification/runtime_hardening_ops.sh` 与 `_ops2.sh`（C01–C06）
+1. 在物理真机上复跑 `verification/runtime_hardening_ops.sh` 与 `_ops2.sh`（C01–C06），并补跑通知/滑动（N01/N02）
 2. 云端 Planner 按用户数据策略接入真实模型供应商（当前经宿主 `cloud_proxy.py` → 讯飞 MaaS `spark-x2.6`）
 3. 把 `tap_text` 接入更多技能模板（列表项、底部导航、设置二级页）
-4. 依方案第 15 章推进软著/专利材料
+4. 让 Planner 可用 `notifications` 做「看通知再决策」，用 `swipe` 替代按坐标拖拽
+5. 依方案第 15 章推进软著/专利材料
 
 ---
 
@@ -2862,3 +2863,154 @@ C06 允许{A,B}却停在设置   TASK_TARGET_MISMATCH 31.8s  target_check ok=Fal
 - 提交：`76ed77a V1.9: 目标核验 + 云端配置同请求落盘 + tap_text 按文本点击原语`（47 files, +1048/−48），已推送 `origin/main`（`fb3f9dd..76ed77a`）。
 - 关闭实例后（模拟器 `adb emu kill`、宿主 `cloud_proxy.py` pid 12610 终止，`ss` 复核 8900/5554/5555 无监听、`free` 空闲 ~4.6GB）用 `--rerun-tasks` **强制重跑** JVM 单测：`tests=318 failures=0 errors=0 skipped=0`，BUILD SUCCESSFUL。
 - 本轮无代码改动遗留；下次需要实机复验时按 `verification/runtime_hardening_ops2.sh` 重新起模拟器即可（需 `MAAS_API_KEY`）。
+
+---
+
+## [任务 23] 2026-10-28 - Android 原生能力增强（通知读取 / 方向滑动 / 全局键扩展）
+
+### 本次目标
+- 让 Agent 更多使用 Android 系统原生能力，而不是只有「读窗口树 + 点节点」
+- 补齐三类系统级观察/操作：通知读取、方向滑动、锁屏/截图等全局键
+- 用户原话：「继续优化，更具安卓系统的特性，完善功能」
+
+### 修改前状态
+- 43 个动作原语、30 个技能
+- 系统能力仅限：`launch_app`、`press_key`(back/home/recents)、`open_settings_page` 少量页、剪贴板写入
+- 读不到通知（Android 上大量状态只经通知暴露：新消息、下载完成、播放控制）
+- 模型要滚动只能给绝对像素坐标（`swipe` 不存在，需自己算起点/终点，跨分辨率易错）
+- 锁屏 / 截图没有原语，只能靠坐标或外部 shell
+
+### 预计修改
+- 涉及模块：`notify/`（新增）、`executor/ActionExecutor`、`dsl/{ActionSpec,DslParser}`、`service/AgentAccessibilityService`、`device/SystemBridge`、`AndroidManifest.xml`、`assets/skills/`
+- 实现思路：全部走 framework 原生 API（`NotificationListenerService` / `AccessibilityService.dispatchGesture` / `GLOBAL_ACTION_*`），零第三方依赖；技能模板只暴露语义参数（方向、距离百分比、条数）
+
+### 修改记录
+
+#### 修改 1
+**文件：** `agent/src/main/java/com/agentruntime/notify/AgentNotificationListener.java`（新增）
+**修改内容：** 新增 `NotificationListenerService` 子类：维护 100 条 LRU 内存缓存（key/包名/标题/正文/分类/时间/ongoing），`onNotificationPosted/Removed` 增量维护，`onListenerConnected/Disconnected` 维护 `connected()` 状态；`snapshot(limit, package)` 按时间倒序、包名子串过滤，标题截 80、正文截 200 字符（`EXTRA_TEXT → BIG_TEXT → SUB_TEXT` 回退）。
+**修改原因：** 通知是 Android 最核心的状态出口之一，不接系统监听就只能靠读 UI 猜。
+**预期效果：** Agent 能在不改动目标应用的前提下读到「刚发生了什么」，为后续「看通知再决策」打底。
+**隐私处理：** 正文只存内存、**不写审计日志**；未授权时由执行层返回 `NEED_NOTIFICATION_ACCESS`，不会假装成功。
+
+#### 修改 2
+**文件：** `agent/src/main/AndroidManifest.xml`
+**修改内容：** 注册 `AgentNotificationListener`，声明 `BIND_NOTIFICATION_LISTENER_SERVICE` 权限与 `android.service.notification.NotificationListenerService` intent-filter。
+**修改原因：** 系统要求监听服务必须由用户在「设置 → 通知使用权」手动授权，manifest 声明是前提。
+**预期效果：** 授权后 `connected()==true`，`notifications` 动作可用。
+
+#### 修改 3
+**文件：** `agent/src/main/java/com/agentruntime/dsl/ActionSpec.java`、`dsl/DslParser.java`
+**修改内容：** 动作枚举新增 `SWIPE`、`NOTIFICATIONS`（43→45），补 `fromString`/`wireName`；`DslParser` 新增参数校验：`swipe.direction ∈ {up,down,left,right}`、`distance_pct 10..90`（默认 60）、`duration_ms 50..3000`（默认 300）、可选的 `x`/`y` 走既有坐标校验；`notifications.limit 1..50`（默认 20）；`press_key` 白名单补 `lock_screen`/`screenshot`。
+**修改原因：** 新原语必须有 schema 校验，非法参数在解析期就拒绝，不允许「尽量执行」。
+**预期效果：** 模型给错方向/超范围距离时得到明确错误，而不是画出一条奇怪的线。
+
+#### 修改 4
+**文件：** `agent/src/main/java/com/agentruntime/executor/ActionExecutor.java`
+**修改内容：**
+- 新增 `case SWIPE → doSwipe`：方向 + 屏幕长边比例 → 对称起终点（默认屏幕中心，`distance_pct` 决定行程），交给 `GestureBridge.swipe(...)` 走 `dispatchGesture`；
+- 新增 `case NOTIFICATIONS`：未授权返回 `NEED_NOTIFICATION_ACCESS`（附带 `page=notification_access` 指引），已授权则返回 `NOTIFICATIONS_LISTED` + 快照 JSON，审计只记条数不记正文；
+- `PRESS_KEY` 增加版本守卫：`AgentAccessibilityService.minSdkOf(key)` 判断可用性，系统过低返回 `UNSUPPORTED_SDK`（不静默失败）。
+**修改原因：** 执行层是唯一设备操作入口；新能力必须在这里统一做 preflight/审计/错误码。
+**预期效果：** 模型不必再算像素；老系统上点 `screenshot` 会得到诚实拒绝。
+
+#### 修改 5
+**文件：** `agent/src/main/java/com/agentruntime/service/AgentAccessibilityService.java`
+**修改内容：** `globalActionOf` 增 `lock_screen`(SDK≥28 → `GLOBAL_ACTION_LOCK_SCREEN`)、`screenshot`(SDK≥30 → `GLOBAL_ACTION_TAKE_SCREENSHOT`)；新增 `minSdkOf(String)` 返回各键最低 API（常见键 16、lock_screen 28、screenshot 30、未知 -1）。
+**修改原因：** 这两个全局动作是 Android 9/11 才有的系统能力，必须按版本判断而不是硬编码常量。
+**预期效果：** 同一份技能模板在 API 30 上可用、在 API 26 上明确报不支持。
+
+#### 修改 6
+**文件：** `agent/src/main/java/com/agentruntime/device/SystemBridge.java`
+**修改内容：** 设置页新增 `notification_access`（`ACTION_NOTIFICATION_LISTENER_SETTINGS`）、`usage_access`（`ACTION_USAGE_ACCESS_SETTINGS`）；中文别名补「通知使用权 / 通知访问 / notification listener / notification access / 使用情况访问 / usage access」。
+**修改原因：** 通知监听必须由用户手动打开，Agent 要能把用户直接送到那一页。
+**预期效果：** `open_settings_page(page=notification_access)` 一步到位，不用让用户自己找。
+
+#### 修改 7
+**文件：** `agent/src/main/assets/skills/sys_swipe.json`、`sys_notifications.json`（新增）；`agent/src/test/java/com/agentruntime/AgentV13Test.java`、`skill/SkillLoadingRegressionTest.java`
+**修改内容：** 新增两个技能（`sys.swipe` 仅需 `direction`，内定 `distance_pct=60`/`duration_ms=300`；`sys.notifications` 无必填参数，`limit=20`）；测试断言原语总数 43→45，并补 3 个用例（swipe 解析为 SWIPE 且带默认参数、非法 direction/distance_pct/limit 被拒、`lock_screen`/`screenshot` 可解析）。
+**修改原因：** 技能是 Planner 的稳定接口，语义参数比像素参数更适合模型。
+**预期效果：** 技能 30→32；`SkillLoadingRegressionTest` 的资产计数断言自动覆盖新技能，避免静默加载失败。
+
+### 遇到的问题
+
+#### 问题 1：内部类 `Entry` 遮蔽 `Map.Entry` 导致编译失败
+**现象：** `AgentNotificationListener.java:39 name clash ... same erasure`。
+**可能原因：** 内部实体类命名为 `Entry`，与 `Map.Entry` 同名，泛型擦除后签名冲突。
+**解决方案：** 内部类改名为 `Note`，`removeEldestEntry` 参数写全限定 `java.util.Map.Entry<String, Note>`。
+**结果：** 已解决，编译通过。
+
+#### 问题 2：`adb shell cmd notification post -c ...` 权限拒绝
+**现象：** `Permission Denial: getIntentSender() ... need uid=1000`。
+**可能原因：** `-c/--content-intent` 是「点击通知时携带的 ContentIntent」，不是通知渠道；普通 shell 无权构造。
+**解决方案：** 去掉 `-c`，改 `adb shell cmd notification post -t 'AgentRuntime测试通知' tag_probe '通知读取链路验证'`。
+**结果：** 已解决。
+
+#### 问题 3：审计里看不到通知正文，无法直接证明链路
+**现象：** 审计按要求脱敏，只有 `NOTIFICATIONS_LISTED` 和条数。
+**可能原因：** 设计如此（隐私），不是缺陷。
+**解决方案：** 在 `notifications` 分支加 `Log.i("AgentNotify", "listed count=… cached=…")` 作为调试证据。
+**结果：** 已解决；重装后 logcat 实测 `I AgentNotify: listed count=1 cached=1`。
+
+#### 问题 4：内存互斥（模拟器 vs Gradle）
+**现象：** 宿主 3 核 / 5.9GB，cgroup `memory.max=4GB`；模拟器占 2–3.9GB 时无法同时跑 gradle。
+**解决方案：** 严格串行：`adb emu kill` → 确认 qemu 进程 0、空闲 ~5.3GB → 构建/单测 → 再起模拟器（TCG boot 120–216s）。
+**结果：** 已解决，全程未触发 OOM。
+
+#### 问题 5：重装后无障碍与通知监听都需要重新绑定
+**现象：** install 后 `notifications` 报未授权、a11y 无窗口树。
+**解决方案：** `settings put secure accessibility_enabled 1` + 写 `enabled_accessibility_services` + `cmd notification allow_listener com.agentruntime.agent/com.agentruntime.notify.AgentNotificationListener`，等待 ~12s 再跑任务。
+**结果：** 已解决（`allow_listener` 仅用于模拟器测试；真实用户必须在设置里手动授权）。
+
+### 最终修改结果
+
+**本次完成：**
+- 通知读取链路（系统监听 → 内存快照 → 动作返回 → 隐私审计）
+- 方向滑动原语（`dispatchGesture`，模型只给方向/距离百分比）
+- `press_key` 扩展 `lock_screen`(API28) / `screenshot`(API30)，按版本诚实拒绝
+- 设置页扩 `notification_access` / `usage_access` 与中文别名
+- 新技能 `sys.notifications` / `sys.swipe`，单测 318→321
+
+**涉及文件：**
+- 新增：`agent/src/main/java/com/agentruntime/notify/AgentNotificationListener.java`、
+  `agent/src/main/assets/skills/sys_swipe.json`、`sys_notifications.json`
+- 修改：`AndroidManifest.xml`、`executor/ActionExecutor.java`、`dsl/ActionSpec.java`、`dsl/DslParser.java`、
+  `service/AgentAccessibilityService.java`、`device/SystemBridge.java`、
+  `test/.../AgentV13Test.java`、`test/.../skill/SkillLoadingRegressionTest.java`、
+  `docs/shots/v16/tree_pixel5_{portrait,landscape}.json`（计数同步 30→32 / 43→45）
+- 证据：`verification/native/N01_*`、`N02_*`、`audit.jsonl`
+
+**关键参数/配置变化：**
+- 动作原语：43 → **45**；技能：30 → **32**
+- `swipe.distance_pct`：默认 60，范围 10..90；`swipe.duration_ms`：默认 300，范围 50..3000
+- `notifications.limit`：默认 20，范围 1..50；缓存上限 100 条
+- `press_key` 最低 API：`lock_screen` 28、`screenshot` 30（其余 16）
+
+### 验证情况
+- 编译：通过（JDK 17 + Gradle 8.14.6，`:agent:assembleDebug`）。
+- 单元测试：**321/321 通过，0 失败 0 错误**。
+- 实机（720x1280 TCG，AOSP 11 `android-30;default;x86_64`）：
+```
+N01（首轮）  SUCCESS  sys.notifications → NOTIFICATIONS_LISTED(281ms)
+                      sys.swipe         → SWIPE_OK(4426ms)
+                      滑动后 uiautomator = launcher3 应用抽屉（AgentRuntime/AntennaPod/Aurora Store/… 15 项）
+N02（重装复验）SUCCESS  steps=[('sys.notifications',True,['NOTIFICATIONS_LISTED']),
+                             ('sys.swipe',True,['SWIPE_OK'])]
+                      logcat: I AgentNotify: listed count=1 cached=1
+```
+- 审计：`verification/native/audit.jsonl`（89KB）含 `result_code=NOTIFICATIONS_LISTED` / `SWIPE_OK`；通知正文按隐私设计不落审计。
+- 真机（物理设备）验证：未进行。
+- `lock_screen` / `screenshot` 仅单测覆盖解析与版本守卫，**未在设备上实际点验**。
+
+### 遗留问题
+1. 通知读取需用户手动授权（系统安全模型决定），Agent 只能引导到设置页，无法代点；
+2. `lock_screen` / `screenshot` 未做设备端点验（截图受 SwiftShader 黑屏环境限制）；
+3. `swipe` 目前是单段线性手势，未支持多段/曲线（如长列表快速抛掷）；
+4. 通知快照未接入 Planner 决策（仅为原语 + 技能，供后续使用）。
+
+### 当前状态
+`完成：通知读取 + 方向滑动 + 全局键扩展已落地，JVM 321/321、设备端 N01/N02 全绿（真机待验）`
+
+### 收尾记录（2026-10-28）
+- 顶部「当前工程状态」已同步到本任务（原指向 [任务 22]）。
+- 模拟器已 `adb emu kill` 关闭，`pgrep -f qemu-system` 为 0，宿主空闲内存恢复 ~5GB；宿主 `cloud_proxy.py` 未在本轮启动。

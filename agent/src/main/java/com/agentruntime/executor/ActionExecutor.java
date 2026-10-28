@@ -194,10 +194,19 @@ public final class ActionExecutor {
             }
             case PRESS_KEY: {
                 String key = spec.param("key");
-                AgentAccessibilityService keySvc = AgentAccessibilityService.getInstance();
-                boolean ok = keySvc != null && keySvc.pressGlobalKey(key);
-                result = ok ? ExecResult.ok("KEY_OK", key, epoch, elapsed(start))
-                        : ExecResult.fail("KEY_FAILED", "global action failed for key=" + key, epoch, elapsed(start));
+                int minSdk = AgentAccessibilityService.minSdkOf(key);
+                if (minSdk < 0) {
+                    result = ExecResult.reject("BAD_KEY", "unknown press_key: " + key, epoch);
+                } else if (android.os.Build.VERSION.SDK_INT < minSdk) {
+                    result = ExecResult.reject("UNSUPPORTED_SDK",
+                            "press_key " + key + " requires API " + minSdk
+                                    + ", device is " + android.os.Build.VERSION.SDK_INT, epoch);
+                } else {
+                    AgentAccessibilityService keySvc = AgentAccessibilityService.getInstance();
+                    boolean ok = keySvc != null && keySvc.pressGlobalKey(key);
+                    result = ok ? ExecResult.ok("KEY_OK", key, epoch, elapsed(start))
+                            : ExecResult.fail("KEY_FAILED", "global action failed for key=" + key, epoch, elapsed(start));
+                }
                 break;
             }
             case LONG_CLICK: {
@@ -255,6 +264,25 @@ public final class ActionExecutor {
             }
             case TAP_TEXT: {
                 result = tapText(spec, cancelRequested, taskDeadlineMs, epoch, start);
+                break;
+            }
+            case SWIPE: {
+                result = doSwipe(spec, epoch, start);
+                break;
+            }
+            case NOTIFICATIONS: {
+                if (!com.agentruntime.notify.AgentNotificationListener.connected()) {
+                    result = ExecResult.reject("NEED_NOTIFICATION_ACCESS",
+                            "通知使用权未授权：在系统设置中为 AgentRuntime 打开“通知使用权”后重试"
+                                    + "（page=notification_access）", epoch);
+                } else {
+                    org.json.JSONObject snap = com.agentruntime.notify.AgentNotificationListener
+                            .snapshot(spec.params.optInt("limit", 20), spec.param("package"));
+                    // 审计里不落通知正文（隐私），只留条数，便于区分"没有通知"和"监听没连上"。
+                    android.util.Log.i("AgentNotify", "listed count=" + snap.optInt("count")
+                            + " cached=" + snap.optInt("total_cached"));
+                    result = ExecResult.ok("NOTIFICATIONS_LISTED", snap.toString(), epoch, elapsed(start));
+                }
                 break;
             }
             case TAP_XY: {
@@ -555,6 +583,52 @@ public final class ActionExecutor {
                 spec.params.optInt("x1", -1), spec.params.optInt("y1", -1),
                 spec.params.optInt("x2", -1), spec.params.optInt("y2", -1),
                 size[0], size[1],
+                spec.params.optLong("duration_ms", 300), spec.timeoutMs);
+    }
+
+    /**
+     * 方向滑动：模型只给方向，不必自己算像素。
+     *
+     * <p>起点默认屏幕中心，行程按屏幕长边比例换算，终点与起点关于中心对称，
+     * 这样既不会把边缘手势区（返回/回桌面）误触发，也不会点偏到导航栏。
+     */
+    private ExecResult doSwipe(ActionSpec spec, long epoch, long start) {
+        com.agentruntime.vision.GestureBridge g = gestureBridge();
+        if (g == null) {
+            return ExecResult.reject("CAPABILITY_MISSING", "gesture bridge not attached", epoch);
+        }
+        int[] size = screenSize();
+        if (size[0] <= 0 || size[1] <= 0) {
+            return ExecResult.fail("NO_SCREEN_SIZE", "cannot resolve screen size", epoch, elapsed(start));
+        }
+        String dir = spec.param("direction");
+        if (dir == null || dir.isEmpty()) dir = "up";
+        int pct = Math.max(10, Math.min(90, spec.params.optInt("distance_pct", 60)));
+        boolean vertical = dir.equals("up") || dir.equals("down");
+        int span = vertical ? size[1] : size[0];
+        int half = Math.max(20, Math.round(span * pct / 200f));
+        int cx = spec.params.has("x") ? spec.params.optInt("x", size[0] / 2) : size[0] / 2;
+        int cy = spec.params.has("y") ? spec.params.optInt("y", size[1] / 2) : size[1] / 2;
+        int x1 = cx, y1 = cy, x2 = cx, y2 = cy;
+        switch (dir) {
+            case "up":
+                y1 = cy + half;
+                y2 = cy - half;
+                break;
+            case "down":
+                y1 = cy - half;
+                y2 = cy + half;
+                break;
+            case "left":
+                x1 = cx + half;
+                x2 = cx - half;
+                break;
+            default: // right
+                x1 = cx - half;
+                x2 = cx + half;
+                break;
+        }
+        return g.swipe(x1, y1, x2, y2, size[0], size[1],
                 spec.params.optLong("duration_ms", 300), spec.timeoutMs);
     }
 

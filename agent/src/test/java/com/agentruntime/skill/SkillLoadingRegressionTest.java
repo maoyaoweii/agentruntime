@@ -108,6 +108,53 @@ public class SkillLoadingRegressionTest {
     }
 
     @Test
+    public void swipeSkillResolvesToNativeGestureWithDirection() throws Exception {
+        List<ActionSpec> actions = engine().resolve("sys.swipe", new JSONObject().put("direction", "up"));
+        assertEquals(1, actions.size());
+        assertEquals(ActionSpec.ActionType.SWIPE, actions.get(0).type);
+        assertEquals("up", actions.get(0).params.getString("direction"));
+        assertEquals(60, actions.get(0).params.optInt("distance_pct"));
+    }
+
+    @Test
+    public void swipeAndNotificationsRejectOutOfRangeParams() {
+        try {
+            com.agentruntime.dsl.DslParser.parseAction(new JSONObject()
+                    .put("action", "swipe")
+                    .put("params", new JSONObject().put("direction", "diagonal")));
+            fail("swipe bad direction must be rejected");
+        } catch (Exception expected) {
+            assertTrue(expected.getMessage().contains("direction"));
+        }
+        try {
+            com.agentruntime.dsl.DslParser.parseAction(new JSONObject()
+                    .put("action", "swipe")
+                    .put("params", new JSONObject().put("direction", "up").put("distance_pct", 95)));
+            fail("swipe distance_pct out of range must be rejected");
+        } catch (Exception expected) {
+            assertTrue(expected.getMessage().contains("distance_pct"));
+        }
+        try {
+            com.agentruntime.dsl.DslParser.parseAction(new JSONObject()
+                    .put("action", "notifications")
+                    .put("params", new JSONObject().put("limit", 99)));
+            fail("notifications limit out of range must be rejected");
+        } catch (Exception expected) {
+            assertTrue(expected.getMessage().contains("limit"));
+        }
+    }
+
+    @Test
+    public void pressKeyAcceptsPlatformGlobalActions() throws Exception {
+        for (String key : new String[]{"lock_screen", "screenshot"}) {
+            ActionSpec a = com.agentruntime.dsl.DslParser.parseAction(new JSONObject()
+                    .put("action", "press_key")
+                    .put("params", new JSONObject().put("key", key)));
+            assertEquals(ActionSpec.ActionType.PRESS_KEY, a.type);
+        }
+    }
+
+    @Test
     public void manifestTemplateIsNotPrevalidatedAsFinalUrl() throws Exception {
         SkillManifest m = SkillManifest.fromJson(new JSONObject()
                 .put("skill_id", "test.template")

@@ -176,7 +176,7 @@ public final class DslParser {
                 break;
             case PRESS_KEY:
                 if (!isKnownPressKey(params.optString("key", null))) {
-                    throw new JSONException("press_key requires params.key in whitelist (back/home/recents/notifications/quick_settings/power_dialog)");
+                    throw new JSONException("press_key requires params.key in whitelist (back/home/recents/notifications/quick_settings/power_dialog/lock_screen/screenshot)");
                 }
                 break;
             case LONG_CLICK:
@@ -368,6 +368,31 @@ public final class DslParser {
                 }
                 break;
             }
+            case SWIPE: {
+                String dir = params.optString("direction", "up");
+                if (!dir.equals("up") && !dir.equals("down")
+                        && !dir.equals("left") && !dir.equals("right")) {
+                    throw new JSONException("swipe params.direction must be up/down/left/right");
+                }
+                int pct = params.optInt("distance_pct", 60);
+                if (pct < 10 || pct > 90) {
+                    throw new JSONException("swipe params.distance_pct out of range 10..90");
+                }
+                long dur = params.optLong("duration_ms", 300);
+                if (dur < 50 || dur > 3000) {
+                    throw new JSONException("swipe duration_ms out of range 50..3000");
+                }
+                if (params.has("x")) requireCoordinate(params, "x", "swipe");
+                if (params.has("y")) requireCoordinate(params, "y", "swipe");
+                break;
+            }
+            case NOTIFICATIONS: {
+                int limit = params.optInt("limit", 20);
+                if (limit < 1 || limit > 50) {
+                    throw new JSONException("notifications params.limit out of range 1..50");
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -416,7 +441,8 @@ public final class DslParser {
         if (key == null) return false;
         String k = key.trim().toLowerCase();
         return k.equals("back") || k.equals("home") || k.equals("recents")
-                || k.equals("notifications") || k.equals("quick_settings") || k.equals("power_dialog");
+                || k.equals("notifications") || k.equals("quick_settings") || k.equals("power_dialog")
+                || k.equals("lock_screen") || k.equals("screenshot");
     }
 
     private static boolean isKnownConfirmation(String conf) {
