@@ -40,8 +40,14 @@ public final class AgentTileService extends TileService {
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             startActivityAndCollapse(pi);
         } else {
-            startActivityAndCollapse(intent);
+            openLegacy(intent);
         }
+    }
+
+    // This overload is only used below Android 14; the PendingIntent path is used on 34+.
+    @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")
+    private void openLegacy(Intent intent) {
+        startActivityAndCollapse(intent);
     }
 
     private void render() {
@@ -50,7 +56,9 @@ public final class AgentTileService extends TileService {
         boolean running = TaskBus.get().running();
         tile.setState(running ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         tile.setLabel("Agent 执行");
-        tile.setSubtitle(running ? TaskBus.get().progressText() : "点击打开控制台");
+        if (Build.VERSION.SDK_INT >= 29) {
+            tile.setSubtitle(running ? TaskBus.get().progressText() : "点击打开控制台");
+        }
         try {
             tile.setIcon(Icon.createWithResource(this, R.drawable.ic_bot));
         } catch (Throwable ignored) {

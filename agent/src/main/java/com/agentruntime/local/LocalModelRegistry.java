@@ -57,7 +57,7 @@ public final class LocalModelRegistry {
                           String visionModel, String deciderModel,
                           Integer timeoutMs, Integer maxTokens) {
         SharedPreferences.Editor e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
-        if (backend != null) e.putString(KEY_BACKEND, backend.trim().toUpperCase());
+        if (backend != null) e.putString(KEY_BACKEND, backend.trim().toUpperCase(java.util.Locale.ROOT));
         if (host != null) e.putString(KEY_HOST, host.trim());
         if (port != null) e.putInt(KEY_PORT, port);
         if (visionModel != null) e.putString(KEY_VISION_MODEL, visionModel.trim());
@@ -106,7 +106,7 @@ public final class LocalModelRegistry {
         JSONObject o = new JSONObject();
         LocalModelConfig cfg = config();
         try {
-            o.put("backend", cfg.backend.name().toLowerCase());
+            o.put("backend", cfg.backend.name().toLowerCase(java.util.Locale.ROOT));
             o.put("host", cfg.host);
             o.put("port", cfg.port);
             o.put("vision_model", cfg.visionModel);

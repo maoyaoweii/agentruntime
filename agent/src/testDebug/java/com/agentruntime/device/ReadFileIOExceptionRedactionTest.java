@@ -32,6 +32,8 @@ public class ReadFileIOExceptionRedactionTest {
         // 仍能读到内容；非 root 才会抛 AccessDeniedException。两者都不能让回执泄露路径。
         File file = new File(RuntimeEnvironment.getApplication().getFilesDir(),
                 "synthetic-unreadable-read-" + UUID.randomUUID() + ".txt");
+        org.junit.Assume.assumeTrue("POSIX permission bits require a POSIX filesystem",
+                Files.getFileStore(file.getParentFile().toPath()).supportsFileAttributeView("posix"));
         Files.write(file.toPath(), "synthetic fixture".getBytes(StandardCharsets.UTF_8));
         Set<PosixFilePermission> originalPermissions = Files.getPosixFilePermissions(file.toPath());
         ExecResult result;

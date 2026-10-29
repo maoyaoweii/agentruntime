@@ -45,7 +45,7 @@ import java.nio.charset.StandardCharsets;
 @RunWith(RobolectricTestRunner.class)
 public class UiTreeDumpTest {
 
-    private static final File OUT = new File("../docs/shots/v16");
+    private static final File OUT = new File("build/test-results/ui-layout");
 
     @Test
     @Config(sdk = 30, qualifiers = "w411dp-h891dp-xxhdpi")

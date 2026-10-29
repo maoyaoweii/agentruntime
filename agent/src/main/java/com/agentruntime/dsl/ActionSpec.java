@@ -31,7 +31,7 @@ public final class ActionSpec {
 
         public static ActionType fromString(String s) throws JSONException {
             if (s == null) throw new JSONException("action type is null");
-            String key = s.trim().toLowerCase();
+            String key = s.trim().toLowerCase(java.util.Locale.ROOT);
             switch (key) {
                 case "find_node": return FIND_NODE;
                 case "click_node": return CLICK_NODE;
@@ -139,7 +139,7 @@ public final class ActionSpec {
 
         public static RiskLevel fromString(String s) {
             if (s == null) return RiskLevel.LOW;
-            String key = s.trim().toUpperCase();
+            String key = s.trim().toUpperCase(java.util.Locale.ROOT);
             if (key.equals("HIGH")) return RiskLevel.HIGH;
             if (key.equals("MEDIUM")) return RiskLevel.MEDIUM;
             return RiskLevel.LOW;

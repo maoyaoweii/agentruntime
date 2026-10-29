@@ -61,7 +61,8 @@ public final class AgentRuntime {
     private final ActionExecutor actionExecutor;
     private final ModelRouter modelRouter;
     private final AuditLogger auditLogger;
-    private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private volatile AtomicBoolean cancelRequested = new AtomicBoolean(false);
 
     public AgentRuntime(StateEngine stateEngine, SkillEngine skillEngine,
                         ActionExecutor actionExecutor, ModelRouter modelRouter,
@@ -83,25 +84,38 @@ public final class AgentRuntime {
 
     /** 带进度回调的执行入口。 */
     public TaskResult runTask(TaskSpec task, boolean autoConfirm, boolean allowReplan, Listener listener) {
-        if (listener != null) {
-            try {
-                listener.onTaskStart(task);
-            } catch (RuntimeException ignored) {
-                // 监听器故障不得影响任务
-            }
+        return runTask(task, autoConfirm, allowReplan, listener, new AtomicBoolean(false));
+    }
+
+    /** Shares cancellation with planning so a stop request cannot be lost at execution start. */
+    public TaskResult runTask(TaskSpec task, boolean autoConfirm, boolean allowReplan,
+                              Listener listener, AtomicBoolean cancellation) {
+        if (!running.compareAndSet(false, true)) {
+            return new TaskResult(task.taskId, "BUSY", new JSONObject());
         }
-        TaskResult result = doRunTask(task, autoConfirm, allowReplan, listener);
-        if (listener != null) {
-            try {
-                listener.onFinish(result);
-            } catch (RuntimeException ignored) {
+        cancelRequested = cancellation;
+        try {
+            if (listener != null) {
+                try {
+                    listener.onTaskStart(task);
+                } catch (RuntimeException ignored) {
+                    // 监听器故障不得影响任务
+                }
             }
+            TaskResult result = doRunTask(task, autoConfirm, allowReplan, listener);
+            if (listener != null) {
+                try {
+                    listener.onFinish(result);
+                } catch (RuntimeException ignored) {
+                }
+            }
+            return result;
+        } finally {
+            running.set(false);
         }
-        return result;
     }
 
     private TaskResult doRunTask(TaskSpec task, boolean autoConfirm, boolean allowReplan, Listener listener) {
-        cancelRequested.set(false);
         long start = System.currentTimeMillis();
         long deadline = start + task.limits.timeoutSeconds * 1000;
         int executedActions = 0;
@@ -317,8 +331,10 @@ public final class AgentRuntime {
         JSONArray actionLog = new JSONArray();
         log.put("actions", actionLog);
         long t0 = System.currentTimeMillis();
+        com.agentruntime.executor.RiskGate.StepScope scope = null;
         try {
             List<ActionSpec> actions = skillEngine.resolve(step.skillId, step.args);
+            scope = actionExecutor.confirmationScope(step.skillId, step.args, actions);
             SkillManifest manifest = skillEngine.manifest(step.skillId);
             boolean stepOk = true;
             String lastCode = "OK";
@@ -423,6 +439,8 @@ public final class AgentRuntime {
             log.put("ok", false);
             log.put("code", "SKILL_RESOLVE_FAILED");
             log.put("error", "skill_resolution_rejected");
+        } finally {
+            if (scope != null) scope.close();
         }
         out.log = log;
         return out;

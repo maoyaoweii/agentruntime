@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/top_bar" android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="76dp"
+    android:paddingStart="16dp" android:paddingEnd="8dp" android:paddingTop="12dp" android:paddingBottom="12dp">
+    <ImageView android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
+        android:src="@drawable/ic_bot" android:tint="@color/brand" android:background="@drawable/bg_icon_square"
+        android:importantForAccessibility="no" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:layout_marginStart="12dp" android:orientation="vertical">
+        <TextView android:id="@+id/tv_brand" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Agent" android:textColor="@color/text_primary" android:textSize="21sp" android:textStyle="bold"
+            android:maxLines="1" android:ellipsize="end" android:accessibilityHeading="true" />
+        <TextView android:id="@+id/tv_session" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="设备工作台" android:textColor="@color/text_tertiary" android:textSize="11sp"
+            android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+    <ImageButton android:id="@+id/btn_console" android:layout_width="48dp" android:layout_height="48dp"
+        android:padding="13dp" android:src="@drawable/ic_terminal" android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="打开任务控制台" android:tooltipText="控制台" />
+    <ImageButton android:id="@+id/btn_skills" android:layout_width="48dp" android:layout_height="48dp"
+        android:padding="13dp" android:src="@drawable/ic_skills" android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="打开技能库" android:tooltipText="技能库" />
+    <ImageButton android:id="@+id/btn_settings_top" android:layout_width="48dp" android:layout_height="48dp"
+        android:padding="13dp" android:src="@drawable/ic_settings" android:tint="@color/text_secondary"
+        android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="打开设置"
+        android:tooltipText="设置" />
+</LinearLayout>

@@ -40,9 +40,8 @@ public final class UiKit {
     /** 给自定义顶栏补上状态栏高度，避免标题被状态栏压住。 */
     public static void applyStatusBarPadding(View topBar) {
         if (topBar == null) return;
-        int base = topBar.getPaddingTop();
-        topBar.setPadding(topBar.getPaddingLeft(), base + statusBarHeight(topBar.getContext()),
-                topBar.getPaddingRight(), topBar.getPaddingBottom());
+        // The window already reserves system bars; only consume actual delivered insets.
+        topBar.setFitsSystemWindows(true);
     }
 
     public static int statusBarHeight(Context c) {

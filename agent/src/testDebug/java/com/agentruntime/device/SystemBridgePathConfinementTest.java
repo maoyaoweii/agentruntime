@@ -24,6 +24,22 @@ import static org.junit.Assert.assertTrue;
 @Config(sdk = 30, application = Application.class)
 public class SystemBridgePathConfinementTest {
 
+    @Test public void nonexistentOutputUnderLinkedParentCannotEscapePrivateRoots() throws Exception {
+        Application context = RuntimeEnvironment.getApplication();
+        Path outside = Files.createTempDirectory(context.getCacheDir().toPath(), "outside-parent-");
+        Path link = context.getFilesDir().toPath().resolve("parent-link-" + UUID.randomUUID());
+        try {
+            Files.createSymbolicLink(link, outside);
+            String target = link.resolve("new-file.txt").toString();
+            ExecResult result = new SystemBridge(context).writeFile(target, "synthetic fixture");
+            assertEquals("PATH_NOT_ALLOWED", result.code);
+            assertFalse(Files.exists(outside.resolve("new-file.txt")));
+        } finally {
+            Files.deleteIfExists(link);
+            Files.deleteIfExists(outside);
+        }
+    }
+
     private static final String OUTSIDE_MARKER = "synthetic-outside-cache-secret-marker";
     private static final String SAFE_MARKER = "synthetic-app-private-safe-marker";
 

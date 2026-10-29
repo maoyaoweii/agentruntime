@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent"
+    android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="12dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="你的设备 · 你的指令"
+        android:textColor="@color/brand" android:textSize="12sp" android:letterSpacing="0.08" android:layout_marginBottom="16dp" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="一句话，
+让手机帮你完成。"
+        android:textColor="@color/text_primary" android:textSize="29sp" android:textStyle="bold" android:lineSpacingExtra="4dp"
+        android:accessibilityHeading="true" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp"
+        android:text="查看设备状态、记录屏幕，或执行一项日常任务。每一步进度，都会留在这里。"
+        android:textColor="@color/text_secondary" android:textSize="14sp" android:lineSpacingExtra="6dp" />
+    <Button android:id="@+id/welcome_status" style="@style/Btn.Ghost" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="20dp"
+        android:padding="12dp" android:text="连接设备能力，开始第一次任务" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" style="@style/T.Section"
+        android:text="从一件小事开始" android:layout_marginTop="28dp" android:layout_marginBottom="12dp" />
+    <Button android:id="@+id/welcome_observe" style="@style/WelcomeAction" android:text="01   了解当前设备    →
+查看网络、电量与运行环境" />
+    <Button android:id="@+id/welcome_screenshot" style="@style/WelcomeAction" android:text="02   截图，留住这一刻    →
+把当前屏幕记录下来" />
+    <Button android:id="@+id/welcome_skills" style="@style/WelcomeAction" android:text="03   探索技能库    →
+查看可用能力与操作说明" />
+</LinearLayout>

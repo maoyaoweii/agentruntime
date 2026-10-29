@@ -65,6 +65,8 @@ public final class ScreenCapturer {
      * @param quality JPEG 质量 0-100
      * @return 截图帧；不可用或失败时返回 null
      */
+    // The SDK 30 guard also covers the screenshot callback and its result APIs.
+    @android.annotation.SuppressLint("NewApi")
     public ScreenFrame capture(int maxEdge, int quality) {
         if (Build.VERSION.SDK_INT < 30) return null;
         AgentAccessibilityService svc = service != null

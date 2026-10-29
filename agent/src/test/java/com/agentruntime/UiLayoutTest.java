@@ -222,6 +222,8 @@ public class UiLayoutTest {
                     + " right=" + (loc[0] + v.getWidth()) + " > " + screenW);
             return true;
         }
+        // Scrollable chip rows intentionally extend beyond their viewport; check the viewport itself.
+        if (v instanceof android.widget.HorizontalScrollView) return false;
         if (v instanceof ViewGroup) {
             ViewGroup g = (ViewGroup) v;
             for (int i = 0; i < g.getChildCount(); i++) {

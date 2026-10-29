@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+    android:background="@color/bg" android:paddingStart="16dp" android:paddingEnd="16dp"
+    android:paddingTop="8dp" android:paddingBottom="12dp">
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:scrollbars="none" android:layout_marginBottom="8dp">
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
+            <Button android:id="@+id/chip_observe" style="@style/Chip" android:text="观察环境" />
+            <Button android:id="@+id/chip_screenshot" style="@style/Chip" android:text="截图留证" />
+            <Button android:id="@+id/chip_overlay" style="@style/Chip" android:text="悬浮助手" />
+            <Button android:id="@+id/chip_perms" style="@style/Chip" android:text="权限设置" />
+            <Button android:id="@+id/chip_skills" style="@style/Chip" android:text="全部技能" />
+            <Button android:id="@+id/chip_smoke" style="@style/Chip" android:text="工具自检" />
+        </LinearLayout>
+    </HorizontalScrollView>
+    <LinearLayout android:id="@+id/composer" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="72dp" android:orientation="horizontal" android:gravity="center_vertical"
+        android:background="@drawable/bg_composer" android:padding="10dp">
+        <EditText android:id="@+id/et_goal" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:minHeight="48dp" android:background="@android:color/transparent"
+            android:textColor="@color/text_primary" android:textColorHint="@color/text_tertiary"
+            android:textSize="15sp" android:hint="描述你想完成的任务…" android:contentDescription="任务目标"
+            android:inputType="textMultiLine|textCapSentences" android:maxLines="4" android:minLines="1"
+            android:paddingStart="4dp" android:paddingEnd="8dp" android:paddingTop="8dp" android:paddingBottom="8dp"
+            android:importantForAutofill="no" />
+        <Button android:id="@+id/btn_run" style="@style/Btn.Primary" android:layout_width="wrap_content"
+            android:layout_height="48dp" android:minWidth="80dp" android:paddingStart="12dp" android:paddingEnd="12dp"
+            android:text="开始任务" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="28dp" android:layout_marginTop="8dp" android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:id="@+id/tv_version" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="@color/text_tertiary" android:textSize="11sp" />
+        <TextView android:id="@+id/tv_running" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:gravity="end" android:layout_marginStart="8dp" android:maxLines="2"
+            android:ellipsize="end" android:text="按你的指令，逐步执行" android:textColor="@color/text_tertiary"
+            android:textSize="11sp" android:accessibilityLiveRegion="polite" />
+    </LinearLayout>
+    <CheckBox android:id="@+id/cb_auto_confirm" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:minHeight="48dp" android:buttonTint="@color/brand" android:checked="false"
+        android:text="测试自动确认（仅调试构建）" android:textColor="@color/text_tertiary" android:textSize="12sp" />
+</LinearLayout>

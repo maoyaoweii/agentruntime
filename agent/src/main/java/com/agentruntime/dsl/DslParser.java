@@ -400,7 +400,7 @@ public final class DslParser {
 
     private static boolean isKnownImeKey(String key) {
         if (key == null) return false;
-        String k = key.trim().toLowerCase();
+        String k = key.trim().toLowerCase(java.util.Locale.ROOT);
         return k.equals("enter") || k.equals("delete") || k.equals("search");
     }
 
@@ -439,7 +439,7 @@ public final class DslParser {
 
     private static boolean isKnownPressKey(String key) {
         if (key == null) return false;
-        String k = key.trim().toLowerCase();
+        String k = key.trim().toLowerCase(java.util.Locale.ROOT);
         return k.equals("back") || k.equals("home") || k.equals("recents")
                 || k.equals("notifications") || k.equals("quick_settings") || k.equals("power_dialog")
                 || k.equals("lock_screen") || k.equals("screenshot");

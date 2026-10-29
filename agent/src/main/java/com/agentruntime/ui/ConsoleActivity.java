@@ -66,7 +66,7 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
         });
         btnStop.setOnClickListener(v -> {
             AgentApp app = AgentApp.get();
-            if (app != null) app.agentRuntime().cancel();
+            TaskRunner.cancel();
             TaskBus.get().warn("ui", "已请求停止");
         });
         btnReplay.setOnClickListener(v -> {
@@ -113,6 +113,10 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
     @Override
     protected void onStart() {
         super.onStart();
+        logBuffer.clear();
+        tvLog.setText("");
+        restoreRecentLog();
+        syncBusyFromBus();
         TaskBus.get().subscribe(this);
     }
 
@@ -143,7 +147,7 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
 
         new Thread(() -> {
             try {
-                TaskRunner.runGoal(goal, true, true);
+                TaskRunner.runGoal(goal, false, true);
             } catch (Throwable t) {
                 TaskBus.get().error("ui", "执行异常：" + t.getMessage());
             } finally {
@@ -171,7 +175,7 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
 
         new Thread(() -> {
             try {
-                TaskRunner.runSkill(skillId, new org.json.JSONObject(), true);
+                TaskRunner.runSkill(skillId, new org.json.JSONObject(), false);
             } catch (Throwable t) {
                 TaskBus.get().error("ui", "执行异常：" + t.getMessage());
             } finally {
@@ -191,6 +195,7 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
     }
 
     private void appendLog(TaskBus.Event e) {
+        boolean followLatest = !logScroll.canScrollVertically(1);
         int start = logBuffer.length();
         logBuffer.append(e.toLine()).append('\n');
         int color;
@@ -210,9 +215,13 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
         }
         logBuffer.setSpan(new ForegroundColorSpan(color), start, logBuffer.length(),
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (logBuffer.length() > 96000) {
+            int cut = logBuffer.toString().indexOf('\n', logBuffer.length() - 64000);
+            if (cut >= 0) logBuffer.delete(0, cut + 1);
+        }
         tvLog.setText(logBuffer);
 
-        logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+        if (followLatest) logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
     }
 
     private void updateHeader() {
@@ -220,6 +229,9 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
         tvTask.setText(bus.currentTaskId().isEmpty() ? "等待任务" : bus.currentTaskId());
 
         switch (bus.state()) {
+            case PLANNING:
+                UiKit.setBadge(tvState, "规划中", UiKit.Badge.WARN);
+                break;
             case RUNNING:
                 UiKit.setBadge(tvState, "执行中", UiKit.Badge.WARN);
                 break;
@@ -238,9 +250,12 @@ public final class ConsoleActivity extends Activity implements TaskBus.Listener 
         }
 
         int total = Math.max(1, bus.stepTotal());
+        btnStop.setEnabled(bus.running());
+        btnReplay.setEnabled(!bus.running() && !TaskRunner.isBusy());
+        progress.setIndeterminate(bus.state() == TaskBus.State.PLANNING);
         int done = bus.stepIndex();
         progress.setProgress(Math.min(100, done * 100 / total));
-        tvStep.setText(bus.running()
+        tvStep.setText(bus.state() == TaskBus.State.PLANNING ? "正在准备执行计划…" : bus.running()
                 ? "第 " + done + "/" + total + " 步 · " + bus.currentStep()
                 : (bus.state() == TaskBus.State.IDLE ? "—" : "已结束 · 共 " + bus.stepTotal() + " 步"));
     }

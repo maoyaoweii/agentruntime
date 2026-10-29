@@ -1,4 +1,6 @@
-# Android AI Agent Runtime V1.9
+# Android AI Agent Runtime V1.9.1
+
+> **2026-10-30 接手更新：** 任务确认与并发保护、规划与隐私修复、原生 UI 改版及回归验证见 [V1.9.1 接手报告](docs/TAKEOVER_2026-10-30.md)。本轮尚未做真机验收；下文设备记录对应各自历史构建。
 
 > **仓库：** https://github.com/xianshengl487-star/agentruntime （private，默认分支 `main`）
 

@@ -3,9 +3,12 @@ package com.agentruntime.ui;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import com.agentruntime.AgentApp;
@@ -20,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 技能库：把 assets/skills 里的技能摊开给人看。
@@ -30,6 +34,7 @@ import java.util.List;
 public final class SkillsActivity extends Activity {
 
     private LinearLayout container;
+    private List<JSONObject> skills;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,16 +44,35 @@ public final class SkillsActivity extends Activity {
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
 
         container = findViewById(R.id.skill_container);
-        List<JSONObject> skills = loadSkills();
-        ((TextView) findViewById(R.id.tv_skill_total)).setText(skills.size() + " 个");
+        skills = loadSkills();
+        EditText search = findViewById(R.id.et_skill_search);
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                renderSkills(s.toString());
+            }
+            @Override public void afterTextChanged(Editable text) { }
+        });
+        renderSkills("");
+    }
 
+    private void renderSkills(String query) {
+        container.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(this);
+        String normalized = query.trim().toLowerCase(Locale.ROOT);
+        int count = 0;
         for (JSONObject s : skills) {
+            String risk = s.optString("risk", "LOW").toUpperCase(Locale.ROOT);
+            String riskLabel = "HIGH".equals(risk) ? "高风险" : "MEDIUM".equals(risk) ? "中风险" : "低风险";
+            String searchable = s.optString("skill_id") + " " + s.optString("target_package") + " " + risk + " " + riskLabel;
+            if (!searchable.toLowerCase(Locale.ROOT).contains(normalized)) continue;
             container.addView(buildRow(inflater, s));
+            count++;
         }
-        if (skills.isEmpty()) {
+        ((TextView) findViewById(R.id.tv_skill_total)).setText(count + " / " + skills.size() + " 项");
+        if (count == 0) {
             TextView tv = new TextView(this);
-            tv.setText("没有找到技能清单");
+            tv.setText(skills.isEmpty() ? "暂时没有可用技能" : "没有找到匹配的技能，试试其他关键词。");
             tv.setTextColor(getColor(R.color.text_tertiary));
             container.addView(tv);
         }
@@ -59,7 +83,7 @@ public final class SkillsActivity extends Activity {
         String id = s.optString("skill_id", "?");
         ((TextView) row.findViewById(R.id.item_skill_id)).setText(id);
 
-        String risk = s.optString("risk", "LOW").toUpperCase();
+        String risk = s.optString("risk", "LOW").toUpperCase(Locale.ROOT);
         TextView riskView = row.findViewById(R.id.item_skill_risk);
         if ("HIGH".equals(risk)) {
             UiKit.setBadge(riskView, "高风险", UiKit.Badge.DANGER);
@@ -99,9 +123,8 @@ public final class SkillsActivity extends Activity {
         TextView runBtn = row.findViewById(R.id.item_skill_run);
         boolean hasRequiredArgs = args != null && args.length() > 0;
         if (hasRequiredArgs) {
-            runBtn.setText("需要参数，去控制台");
-            runBtn.setAlpha(0.55f);
-            runBtn.setOnClickListener(v -> UiKit.toast(this, "该技能需要参数，请在控制台用自然语言描述"));
+            runBtn.setText("去控制台描述任务 →");
+            runBtn.setOnClickListener(v -> startActivity(new Intent(this, ConsoleActivity.class)));
         } else {
             runBtn.setOnClickListener(v -> {
                 Intent i = new Intent(this, ConsoleActivity.class);

@@ -117,7 +117,7 @@ public final class SystemBridge {
 
     private static Integer streamOf(String name) {
         if (name == null) return AudioManager.STREAM_MUSIC;
-        switch (name.trim().toLowerCase()) {
+        switch (name.trim().toLowerCase(java.util.Locale.ROOT)) {
             case "music":
                 return AudioManager.STREAM_MUSIC;
             case "ring":
@@ -219,7 +219,7 @@ public final class SystemBridge {
 
     private static int mediaCodeOf(String key) {
         if (key == null) return 0;
-        switch (key.trim().toLowerCase()) {
+        switch (key.trim().toLowerCase(java.util.Locale.ROOT)) {
             case "play":
                 return KeyEvent.KEYCODE_MEDIA_PLAY;
             case "pause":
@@ -286,7 +286,7 @@ public final class SystemBridge {
     private static String canonicalPage(String page) {
         if (page == null) return null;
         // 下划线/连字符统一成空格，再压掉重复空格：network_and_internet → network and internet
-        String p = page.trim().toLowerCase().replace('_', ' ').replace('-', ' ')
+        String p = page.trim().toLowerCase(java.util.Locale.ROOT).replace('_', ' ').replace('-', ' ')
                 .replaceAll("\\s+", " ").trim();
         if (p.isEmpty()) return null;
         // 规范名本身也按下划线写在 SETTINGS_PAGES 里（如 accessibility），先做精确匹配
@@ -342,13 +342,13 @@ public final class SystemBridge {
             List<ApplicationInfo> apps = pm.getInstalledApplications(0);
             JSONArray arr = new JSONArray();
             int max = Math.max(1, Math.min(200, limit));
-            String f = filter == null ? "" : filter.trim().toLowerCase();
+            String f = filter == null ? "" : filter.trim().toLowerCase(java.util.Locale.ROOT);
             for (ApplicationInfo ai : apps) {
                 if (arr.length() >= max) break;
                 String label = String.valueOf(pm.getApplicationLabel(ai));
                 if (!f.isEmpty()
-                        && !label.toLowerCase().contains(f)
-                        && !ai.packageName.toLowerCase().contains(f)) {
+                        && !label.toLowerCase(java.util.Locale.ROOT).contains(f)
+                        && !ai.packageName.toLowerCase(java.util.Locale.ROOT).contains(f)) {
                     continue;
                 }
                 JSONObject o = new JSONObject();
@@ -427,8 +427,8 @@ public final class SystemBridge {
     private boolean isUnder(File f, File root) {
         if (f == null || root == null) return false;
         try {
-            String rc = root.getCanonicalPath();
-            String fc = f.getCanonicalPath();
+            String rc = CanonicalFiles.resolve(root).getPath();
+            String fc = CanonicalFiles.resolve(f).getPath();
             return fc.equals(rc) || fc.startsWith(rc + File.separator);
         } catch (Throwable t) {
             return false;
@@ -451,10 +451,10 @@ public final class SystemBridge {
             if (!candidate.isAbsolute()) {
                 candidate = new File(context.getFilesDir(), path.trim());
             }
-            String canonical = candidate.getCanonicalPath();
+            String canonical = CanonicalFiles.resolve(candidate).getPath();
             for (File root : allowedRoots()) {
                 if (root == null) continue;
-                String rc = root.getCanonicalPath();
+                String rc = CanonicalFiles.resolve(root).getPath();
                 if (canonical.equals(rc) || canonical.startsWith(rc + File.separator)) {
                     return new File(canonical);
                 }

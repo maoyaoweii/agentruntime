@@ -233,40 +233,7 @@ public final class ModelRouter {
             com.agentruntime.runtime.TaskBus.get()
                     .info("plan", "已剔除不可判定条件：" + dropped);
         }
-        dropRedundantLaunchSteps(spec);
         return clampLimits(spec);
-    }
-
-    /**
-     * 丢掉"多余的启动步"。
-     *
-     * <p>实测模型常把「打开应用」拆成单独一步，且用应用名/标签当点击目标
-     * （例如先来一步 {@code sys.ui_launch_tap{calendar, "月|Month|日历"}}）。
-     * 这类锚点在目标应用的视图树里并不存在，第一步必然 WAIT_TIMEOUT，
-     * 进而触发重规划——重规划往往更离谱（实测转去 {@code web.browse_local_page}）。
-     *
-     * <p>而 {@code sys.ui_launch_tap} 本身已经包含启动动作，所以紧随其后、
-     * 同一个 {@code app_package} 的那一步才是真正要点的控件；
-     * 只需要把前面那步删掉，行为等价但少一次超时。
-     */
-    private void dropRedundantLaunchSteps(TaskSpec spec) {
-        if (spec == null || spec.steps == null || spec.steps.size() < 2) return;
-        String launchSkill = "sys.ui_launch_tap";
-        int removed = 0;
-        for (int i = spec.steps.size() - 2; i >= 0; i--) {
-            TaskSpec.TaskStep cur = spec.steps.get(i);
-            TaskSpec.TaskStep next = spec.steps.get(i + 1);
-            if (!launchSkill.equals(cur.skillId) || !launchSkill.equals(next.skillId)) continue;
-            String curPkg = cur.args == null ? "" : cur.args.optString("app_package", "");
-            String nextPkg = next.args == null ? "" : next.args.optString("app_package", "");
-            if (curPkg.isEmpty() || !curPkg.equals(nextPkg)) continue;
-            spec.steps.remove(i);
-            removed++;
-        }
-        if (removed > 0) {
-            com.agentruntime.runtime.TaskBus.get()
-                    .info("plan", "已丢弃 " + removed + " 个多余的启动步（同应用连续启动）");
-        }
     }
 
     /**
@@ -276,7 +243,7 @@ public final class ModelRouter {
      */
     private static TaskSpec clampLimits(TaskSpec spec) throws JSONException {
         int steps = spec.steps == null ? 0 : spec.steps.size();
-        int minSteps = Math.max(24, steps * 8);
+        int minSteps = Math.min(64, Math.max(24, steps * 8));
         JSONObject root = spec.toJson();
         JSONObject lim = root.optJSONObject("limits");
         if (lim == null) lim = new JSONObject();

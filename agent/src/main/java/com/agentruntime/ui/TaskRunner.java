@@ -1,6 +1,7 @@
 package com.agentruntime.ui;
 
 import com.agentruntime.AgentApp;
+import com.agentruntime.agent.BuildConfig;
 import com.agentruntime.dsl.ActionSpec;
 import com.agentruntime.dsl.DslParser;
 import com.agentruntime.dsl.TaskSpec;
@@ -17,6 +18,8 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 任务执行入口：UI、悬浮窗、QS 磁贴、adb 全部走这里。
@@ -26,13 +29,29 @@ import java.util.List;
  */
 public final class TaskRunner {
 
+    private static final AtomicReference<Execution> ACTIVE = new AtomicReference<>();
+
+    private static final class Execution {
+        final AtomicBoolean cancellation = new AtomicBoolean(false);
+        final Thread thread = Thread.currentThread();
+    }
+
+    private interface TaskOperation {
+        AgentRuntime.TaskResult run(AtomicBoolean cancellation) throws Exception;
+    }
+
     private TaskRunner() {
     }
 
     public static AgentRuntime.TaskResult runGoal(String goal, boolean autoConfirm, boolean allowReplan) throws Exception {
+        return runExclusive(autoConfirm, cancellation -> planAndRun(goal, autoConfirm, allowReplan, cancellation));
+    }
+
+    private static AgentRuntime.TaskResult planAndRun(String goal, boolean autoConfirm,
+                                                      boolean allowReplan, AtomicBoolean cancellation) throws Exception {
+        if (cancellation.get()) return cancelled();
         AgentApp app = AgentApp.get();
         TaskBus bus = TaskBus.get();
-        app.riskGate().setTestModeAutoConfirm(autoConfirm);
 
         bus.info("plan", "规划中…");
         TaskSpec task;
@@ -51,17 +70,67 @@ public final class TaskRunner {
             skills.append(step.skillId);
         }
         if (skills.length() > 0) bus.info("plan", "计划 " + skills);
-        return app.agentRuntime().runTask(task, autoConfirm, allowReplan, bus.runtimeListener());
+        return execute(task, autoConfirm, allowReplan, cancellation);
     }
 
     public static AgentRuntime.TaskResult runTaskJson(String taskJson, boolean autoConfirm, boolean allowReplan) throws Exception {
-        AgentApp app = AgentApp.get();
-        TaskBus bus = TaskBus.get();
-        app.riskGate().setTestModeAutoConfirm(autoConfirm);
+        return runExclusive(autoConfirm, cancellation -> {
+            TaskSpec task = DslParser.parseTask(taskJson);
+            return execute(task, autoConfirm, allowReplan, cancellation);
+        });
+    }
 
-        TaskSpec task = DslParser.parseTask(taskJson);
-        bus.info("plan", "加载任务 JSON → " + task.taskId);
-        return app.agentRuntime().runTask(task, autoConfirm, allowReplan, bus.runtimeListener());
+    public static boolean isBusy() {
+        return ACTIVE.get() != null;
+    }
+
+    public static void cancel() {
+        Execution execution = ACTIVE.get();
+        if (execution != null) {
+            execution.cancellation.set(true);
+            execution.thread.interrupt();
+        }
+        AgentApp app = AgentApp.get();
+        if (app != null) {
+            app.agentRuntime().cancel();
+            app.modelRouter().cloud().cancel();
+            app.confirmations().cancelPending();
+        }
+    }
+
+    private static AgentRuntime.TaskResult runExclusive(boolean autoConfirm, TaskOperation operation) throws Exception {
+        Execution execution = new Execution();
+        AtomicBoolean cancellation = execution.cancellation;
+        if (!ACTIVE.compareAndSet(null, execution)) {
+            throw new IllegalStateException("已有任务正在规划或执行，请先停止或等待完成");
+        }
+        AgentApp app = AgentApp.get();
+        try {
+            app.riskGate().setTestModeAutoConfirm(BuildConfig.DEBUG && autoConfirm);
+            TaskBus.get().planningStarted();
+            return operation.run(cancellation);
+        } catch (Exception e) {
+            if (cancellation.get()) {
+                return cancelled();
+            }
+            TaskBus.get().planningFailed();
+            throw e;
+        } finally {
+            if (app != null) app.riskGate().setTestModeAutoConfirm(false);
+            ACTIVE.compareAndSet(execution, null);
+        }
+    }
+
+    private static AgentRuntime.TaskResult cancelled() {
+        AgentRuntime.TaskResult result = new AgentRuntime.TaskResult("planning", "CANCELLED", new JSONObject());
+        TaskBus.get().runtimeListener().onFinish(result);
+        return result;
+    }
+
+    private static AgentRuntime.TaskResult execute(TaskSpec task, boolean autoConfirm,
+                                                    boolean allowReplan, AtomicBoolean cancellation) {
+        return AgentApp.get().agentRuntime().runTask(task, BuildConfig.DEBUG && autoConfirm,
+                allowReplan, TaskBus.get().runtimeListener(), cancellation);
     }
 
     /** 直接按技能 ID 执行内置技能（快捷面板用，跳过自然语言规划）。 */

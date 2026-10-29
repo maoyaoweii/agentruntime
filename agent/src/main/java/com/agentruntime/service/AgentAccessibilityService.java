@@ -260,7 +260,7 @@ public final class AgentAccessibilityService extends AccessibilityService {
 
     public static Integer globalActionOf(String key) {
         if (key == null) return null;
-        switch (key.trim().toLowerCase()) {
+        switch (key.trim().toLowerCase(java.util.Locale.ROOT)) {
             case "back": return GLOBAL_ACTION_BACK;
             case "home": return GLOBAL_ACTION_HOME;
             case "recents": return GLOBAL_ACTION_RECENTS;
@@ -279,7 +279,7 @@ public final class AgentAccessibilityService extends AccessibilityService {
     /** 该全局按键要求的最低 API；未知按键返回 -1。 */
     public static int minSdkOf(String key) {
         if (key == null) return -1;
-        switch (key.trim().toLowerCase()) {
+        switch (key.trim().toLowerCase(java.util.Locale.ROOT)) {
             case "back":
             case "home":
             case "recents":

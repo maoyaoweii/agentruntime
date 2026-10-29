@@ -25,7 +25,7 @@ public final class SafetyPolicy {
      */
     public static boolean isSafeUrl(String url) {
         if (url == null) return false;
-        String u = url.trim().toLowerCase();
+        String u = url.trim().toLowerCase(java.util.Locale.ROOT);
         if (u.isEmpty() || u.length() > MAX_URL_LENGTH) return false;
         if (!(u.startsWith("http://") || u.startsWith("https://"))) return false;
         if (u.contains("javascript:") || u.contains("file://") || u.contains("content://")
