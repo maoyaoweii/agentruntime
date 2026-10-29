@@ -30,7 +30,7 @@ public final class LocalRulePlanner {
 
     public TaskSpec planOrNull(String goal) {
         if (goal == null) return null;
-        String g = goal.toLowerCase();
+        String g = goal.toLowerCase(java.util.Locale.ROOT);
         try {
             // V1.1：目标里带 http(s) 链接时优先走内置浏览器，避免被"网页"关键词误导到本地测试页
             String url = extractUrl(goal);

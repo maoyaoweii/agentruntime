@@ -127,7 +127,7 @@ public final class RomInfo {
             aggressive = true;
         } else if (!oneui.isEmpty()) {
             rom = "One UI " + oneui;
-        } else if (flyme != null && flyme.toLowerCase().contains("flyme")) {
+        } else if (flyme != null && flyme.toLowerCase(java.util.Locale.ROOT).contains("flyme")) {
             rom = "Flyme";
             aggressive = true;
         } else if (!zui.isEmpty()) {
@@ -151,7 +151,7 @@ public final class RomInfo {
 
     /** 是否国产 ROM（这些 ROM 才有"自启动管理"这类页面）。 */
     public boolean isDomesticRom() {
-        String m = (brand + " " + rom).toLowerCase();
+        String m = (brand + " " + rom).toLowerCase(java.util.Locale.ROOT);
         return m.contains("xiaomi") || m.contains("redmi") || m.contains("miui")
                 || m.contains("huawei") || m.contains("honor") || m.contains("harmony")
                 || m.contains("oppo") || m.contains("oneplus") || m.contains("realme")

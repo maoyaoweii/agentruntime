@@ -58,7 +58,7 @@ public final class TaskBus {
     }
 
     /** 任务整体状态。 */
-    public enum State { IDLE, RUNNING, SUCCESS, FAILED, CANCELLED }
+    public enum State { IDLE, PLANNING, RUNNING, SUCCESS, FAILED, CANCELLED }
 
     private static final int MAX_RECENT = 300;
     private static final TaskBus INSTANCE = new TaskBus();
@@ -155,17 +155,34 @@ public final class TaskBus {
     }
 
     public boolean running() {
-        return state == State.RUNNING;
+        return state == State.PLANNING || state == State.RUNNING;
+    }
+
+    public void planningStarted() {
+        state = State.PLANNING;
+        currentTaskId = "";
+        currentStep = "";
+        stepIndex = 0;
+        stepTotal = 0;
+        clearLog();
+        info("plan", "正在理解目标，准备执行计划…");
+    }
+
+    public void planningFailed() {
+        state = State.FAILED;
+        error("plan", "任务未启动，请检查目标或模型配置");
     }
 
     /** 进度描述，给悬浮窗与通知用。 */
     public String progressText() {
+        if (state == State.PLANNING) return "正在规划…";
         if (state == State.RUNNING) {
             return "执行中 " + stepIndex + "/" + stepTotal
                     + (currentStep.isEmpty() ? "" : " · " + currentStep);
         }
         if (state == State.IDLE) return "空闲";
-        return state == State.CANCELLED ? "已取消" : state.name();
+        if (state == State.CANCELLED) return "已取消";
+        return state == State.SUCCESS ? "已完成" : "执行失败";
     }
 
     // ------------------------------------------------------ 运行时适配
@@ -179,12 +196,13 @@ public final class TaskBus {
         return new AgentRuntime.Listener() {
             @Override
             public void onTaskStart(com.agentruntime.dsl.TaskSpec task) {
+                boolean fromPlanning = state == State.PLANNING;
                 state = State.RUNNING;
                 currentTaskId = task.taskId;
                 stepTotal = task.steps.size();
                 stepIndex = 0;
                 currentStep = "";
-                clearLog();
+                if (!fromPlanning) clearLog();
                 ok("task", "开始任务 " + task.taskId + "（" + task.steps.size() + " 步）");
                 if (!task.goal.isEmpty()) info("task", "目标已载入");
             }

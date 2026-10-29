@@ -91,11 +91,11 @@ public final class AgentNotificationListener extends NotificationListenerService
         list.sort((a, b) -> Long.compare(b.postTime, a.postTime));
 
         int max = Math.max(1, Math.min(50, limit));
-        String f = pkgFilter == null ? "" : pkgFilter.trim().toLowerCase();
+        String f = pkgFilter == null ? "" : pkgFilter.trim().toLowerCase(java.util.Locale.ROOT);
         JSONArray arr = new JSONArray();
         for (Note e : list) {
             if (arr.length() >= max) break;
-            if (!f.isEmpty() && !e.pkg.toLowerCase().contains(f)) continue;
+            if (!f.isEmpty() && !e.pkg.toLowerCase(java.util.Locale.ROOT).contains(f)) continue;
             arr.put(e.toJson());
         }
 

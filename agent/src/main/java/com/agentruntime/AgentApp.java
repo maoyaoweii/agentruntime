@@ -37,6 +37,7 @@ public final class AgentApp extends Application {
     private SkillEngine skillEngine;
     private ModelRouter modelRouter;
     private RiskGate riskGate;
+    private com.agentruntime.ui.RiskConfirmation confirmations;
     private AccessibilityBridge accessibilityBridge;
     private IntentBridge intentBridge;
     private ActionExecutor actionExecutor;
@@ -74,6 +75,9 @@ public final class AgentApp extends Application {
         system1IsModel = jev != null;
         skillEngine = new SkillEngine(this);
         riskGate = new RiskGate();
+        confirmations = new com.agentruntime.ui.RiskConfirmation(this);
+        registerActivityLifecycleCallbacks(confirmations);
+        riskGate.setConfirmationChannel(confirmations);
         accessibilityBridge = new AccessibilityBridge(stateEngine);
         intentBridge = new IntentBridge(this);
         actionExecutor = new ActionExecutor(this, stateEngine, accessibilityBridge, intentBridge, system1, riskGate, auditLogger);
@@ -123,6 +127,10 @@ public final class AgentApp extends Application {
 
     public RiskGate riskGate() {
         return riskGate;
+    }
+
+    public com.agentruntime.ui.RiskConfirmation confirmations() {
+        return confirmations;
     }
 
     public AccessibilityBridge accessibilityBridge() {

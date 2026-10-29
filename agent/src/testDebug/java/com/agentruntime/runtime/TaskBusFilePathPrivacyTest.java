@@ -87,7 +87,7 @@ public class TaskBusFilePathPrivacyTest {
             AgentRuntime.TaskResult result = runtime.runTask(task, false, false, bus.runtimeListener());
             assertEquals("FAILED", result.status);
             assertEquals(TaskBus.State.FAILED, bus.state());
-            assertEquals("FAILED", bus.progressText());
+            assertEquals("执行失败", bus.progressText());
             assertEquals(1, bus.stepIndex());
             assertEquals(1, bus.stepTotal());
 

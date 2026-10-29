@@ -25,7 +25,7 @@ public final class RuleBasedSystem1 implements System1 {
         if (candidates == null || candidates.isEmpty()) {
             return new Decision(null, 0.0, "no_candidates");
         }
-        String goal = subGoal == null ? "" : subGoal.toLowerCase();
+        String goal = subGoal == null ? "" : subGoal.toLowerCase(java.util.Locale.ROOT);
         double best = -1;
         double second = -1;
         Candidate bestC = null;

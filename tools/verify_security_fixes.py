@@ -40,10 +40,20 @@ require('getBooleanExtra("auto_confirm", false)' in task,
 main = (ROOT / "agent/src/main/java/com/agentruntime/ui/MainActivity.java").read_text()
 require('getBoolean("auto_confirm", false)' in main,
         "MainActivity restored auto_confirm default must be false")
-layout = (ROOT / "agent/src/main/res/layout/activity_main.xml").read_text()
-checkbox = re.search(r'<CheckBox\b(?P<body>.*?)id="@\+id/cb_auto_confirm"(?P<tail>.*?)/>', layout, re.S)
-require(checkbox is not None and 'android:checked="true"' not in checkbox.group(0),
+def layout_nodes(name):
+    tree = ET.parse(ROOT / "agent/src/main/res/layout" / name).getroot()
+    yield from tree.iter()
+    for include in tree.iter("include"):
+        layout = include.get("layout", "")
+        if layout.startswith("@layout/"):
+            yield from layout_nodes(layout[len("@layout/"):] + ".xml")
+
+checkbox = next((node for node in layout_nodes("activity_main.xml")
+                 if node.get(ANDROID + "id") == "@+id/cb_auto_confirm"), None)
+require(checkbox is not None and checkbox.get(ANDROID + "checked", "false") == "false",
         "MainActivity auto-confirm checkbox must be unchecked by default")
+require(activity is not None and activity.get(ANDROID + "permission") == "android.permission.DUMP",
+        "TaskExecActivity must require privileged caller permission even in debug")
 overlay = (ROOT / "agent/src/main/java/com/agentruntime/overlay/OverlayService.java").read_text()
 require("TaskRunner.runGoal(goal, false, true)" in overlay,
         "OverlayService must not silently enable test auto-confirm")

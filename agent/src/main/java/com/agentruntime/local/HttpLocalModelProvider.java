@@ -146,13 +146,6 @@ public final class HttpLocalModelProvider implements LocalModelProvider {
     }
 
     private static String readAll(InputStream in) throws IOException {
-        if (in == null) return "";
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        byte[] buf = new byte[8192];
-        int n;
-        while ((n = in.read(buf)) > 0) {
-            bos.write(buf, 0, n);
-        }
-        return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+        return com.agentruntime.network.ResponseBody.read(in);
     }
 }

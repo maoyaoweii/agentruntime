@@ -82,13 +82,29 @@ public final class IntentBridge implements DeviceBridge {
     public ExecResult closeSystemDialogs() {
         long start = System.currentTimeMillis();
         try {
-            context.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                com.agentruntime.service.AgentAccessibilityService service =
+                        com.agentruntime.service.AgentAccessibilityService.getInstance();
+                if (service == null) return ExecResult.reject("NEED_ACCESSIBILITY",
+                        "closing the notification shade requires accessibility on Android 12+", 0);
+                boolean closed = service.performGlobalAction(
+                        android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE);
+                return closed ? ExecResult.ok("DIALOGS_CLOSED", "notification shade dismissed", 0, elapsed(start))
+                        : ExecResult.fail("DISMISS_FAILED", "notification shade could not be dismissed", 0, elapsed(start));
+            }
+            closeLegacyDialogs();
             return ExecResult.ok("DIALOGS_CLOSED", "CLOSE_SYSTEM_DIALOGS broadcast sent", 0, elapsed(start));
         } catch (SecurityException e) {
             return ExecResult.reject("PLATFORM_RESTRICTED", "CLOSE_SYSTEM_DIALOGS is a protected broadcast (system signature required)", 0);
         } catch (RuntimeException e) {
             return ExecResult.fail("BROADCAST_FAILED", e.getMessage(), 0, elapsed(start));
         }
+    }
+
+    // API <= 30 permits this broadcast; Android 12+ takes the accessibility path above.
+    @android.annotation.SuppressLint("MissingPermission")
+    private void closeLegacyDialogs() {
+        context.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
     }
 
     private static long elapsed(long start) {

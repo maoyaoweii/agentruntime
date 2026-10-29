@@ -115,7 +115,7 @@ public final class AgentImeService extends InputMethodService {
         try {
             int action;
             int keyCode = 0;
-            switch (key == null ? "" : key.trim().toLowerCase()) {
+            switch (key == null ? "" : key.trim().toLowerCase(java.util.Locale.ROOT)) {
                 case "enter":
                     action = EditorInfo.IME_ACTION_DONE;
                     keyCode = android.view.KeyEvent.KEYCODE_ENTER;
@@ -174,6 +174,7 @@ public final class AgentImeService extends InputMethodService {
 
     @Override
     public boolean onEvaluateInputViewShown() {
+        super.onEvaluateInputViewShown();
         // 有物理键盘时也保持可注入
         return true;
     }

@@ -57,6 +57,37 @@ public final class ActionExecutor {
         return capabilities;
     }
 
+    public RiskGate.StepScope confirmationScope(String skillId, JSONObject args, List<ActionSpec> actions) {
+        StringBuilder summary = new StringBuilder("执行技能：").append(skillId);
+        java.util.Iterator<String> keys = args.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            String label = key.equals("text") ? "内容" : key.equals("path") ? "文件路径"
+                    : key.equals("contact_alias") ? "联系人" : key.equals("file_alias") ? "文件"
+                    : key.equals("app_package") ? "目标应用" : key;
+            summary.append('\n').append(label).append("：").append(confirmationValue(args.optString(key, "")));
+        }
+        summary.append("\n\n本次操作清单：");
+        for (int i = 0; i < actions.size(); i++) {
+            ActionSpec action = actions.get(i);
+            summary.append('\n').append(i + 1).append(". ").append(action.type.wireName())
+                    .append(' ').append(confirmationValue(action.toJson().toString()));
+        }
+        return riskGate.openStep(summary.toString());
+    }
+
+    private static String confirmationValue(String value) {
+        StringBuilder visible = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isISOControl(c) || (c >= '\u202a' && c <= '\u202e')
+                    || (c >= '\u2066' && c <= '\u2069')) {
+                visible.append(String.format(java.util.Locale.ROOT, "\\u%04x", (int) c));
+            } else visible.append(c);
+        }
+        return visible.toString();
+    }
+
     public ExecResult execute(String taskId, String stepId, String subGoal, ActionSpec spec) {
         return execute(taskId, stepId, subGoal, spec, java.util.Collections.emptyList());
     }
@@ -151,6 +182,14 @@ public final class ActionExecutor {
         }
         if (decision.autoConfirmed) {
             audit(taskId, actionId, "risk_gate", "none", epoch, "AUTO_CONFIRMED_TEST_MODE", null);
+        }
+
+        // A confirmation can outlive a cancellation or deadline. Recheck before any side effect.
+        if (cancelRequested != null && cancelRequested.get()) {
+            return ExecResult.cancelled("USER_CANCEL", "cancel requested before execution", epoch);
+        }
+        if (System.currentTimeMillis() >= taskDeadlineMs) {
+            return ExecResult.timeout("TASK_TIMEOUT", "task deadline reached during confirmation", epoch, elapsed(start));
         }
 
         // 执行
@@ -757,10 +796,9 @@ public final class ActionExecutor {
                                 + " rebind accessibility service", epoch, elapsed(start));
             }
             UiNode node = pickByText(state, query);
-            logTap("attempt=" + attempt + " query=" + query + " root=" + rootBounds(state)
+            logTap("attempt=" + attempt + " root=" + rootBounds(state)
                     + " nodes=" + (state == null || state.root == null ? 0 : state.root.flat().size())
                     + " hit=" + (node == null ? "-" : node.nodeId));
-            if (node == null && attempt == 0) logTap("tree=" + describeTree(state, 24));
             if (node != null) {
                 ExecResult r = accessibilityBridge.performClick(node, spec.timeoutMs);
                 if (r.ok()) {
@@ -774,13 +812,12 @@ public final class ActionExecutor {
             // 目标被模态弹窗挡住（首启公告/更新提示）时，先关掉它再重新找；只看一次，避免反复点按钮。
             if (dismissed == null) {
                 UiNode close = dismissBlockingDialog(state);
-                logTap("dismiss-candidate=" + (close == null ? "-"
-                        : (close.text + "/" + close.contentDescription + "/" + close.nodeId)));
+                logTap("dismiss-candidate=" + (close != null));
                 if (close != null) {
                     dismissed = close.text != null && !close.text.trim().isEmpty()
                             ? close.text.trim() : close.contentDescription;
                     boolean clicked = accessibilityBridge.performClick(close, spec.timeoutMs).ok();
-                    logTap("dismiss-click=" + dismissed + " ok=" + clicked);
+                    logTap("dismiss-click ok=" + clicked);
                     if (clicked) {
                         if (!sleepQuietly(settleMs)) {
                             return ExecResult.cancelled("INTERRUPTED", "tap_text interrupted", epoch);
@@ -890,37 +927,6 @@ public final class ActionExecutor {
         if (state == null || state.root == null) return "null";
         return "[" + state.root.left + "," + state.root.top + ","
                 + state.root.right + "," + state.root.bottom + "]";
-    }
-
-    /** 未命中时把当前树压成一行日志（上限 max 个节点），用于设备端定位"为什么找不到"。 */
-    private static String describeTree(WorldState state, int max) {
-        if (state == null || state.root == null) return "null";
-        StringBuilder sb = new StringBuilder();
-        int i = 0;
-        for (UiNode n : state.root.flat()) {
-            if (i++ >= max) {
-                sb.append(" ...");
-                break;
-            }
-            sb.append('{').append(n.nodeId).append(' ').append(shortClass(n.className));
-            if (n.text != null && !n.text.isEmpty()) sb.append(" t=").append(trim(n.text, 24));
-            if (n.contentDescription != null && !n.contentDescription.isEmpty())
-                sb.append(" d=").append(trim(n.contentDescription, 24));
-            if (n.clickable) sb.append(" C");
-            if (!n.visible) sb.append(" HID");
-            sb.append('}');
-        }
-        return sb.toString();
-    }
-
-    private static String shortClass(String cls) {
-        if (cls == null) return "?";
-        int dot = cls.lastIndexOf('.');
-        return dot < 0 ? cls : cls.substring(dot + 1);
-    }
-
-    private static String trim(String s, int n) {
-        return s.length() <= n ? s : s.substring(0, n) + "…";
     }
 
     /** 在整棵树里挑最像用户想点的那个节点（不依赖坐标，也不做模糊的语义猜测）。 */

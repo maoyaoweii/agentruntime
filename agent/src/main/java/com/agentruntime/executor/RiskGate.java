@@ -27,6 +27,22 @@ public final class RiskGate {
 
     private volatile ConfirmationChannel channel;
     private volatile boolean testModeAutoConfirm;
+    private final ThreadLocal<StepScope> stepScope = new ThreadLocal<>();
+
+    /** A decision covers one fixed skill expansion and expires before the next step or retry. */
+    public final class StepScope implements AutoCloseable {
+        private final String summary;
+        private boolean approved;
+
+        private StepScope(String summary) { this.summary = summary; }
+        @Override public void close() { stepScope.remove(); }
+    }
+
+    public StepScope openStep(String summary) {
+        StepScope scope = new StepScope(summary);
+        stepScope.set(scope);
+        return scope;
+    }
 
     public void setConfirmationChannel(ConfirmationChannel channel) {
         this.channel = channel;
@@ -42,9 +58,12 @@ public final class RiskGate {
         if (testModeAutoConfirm) {
             return new Decision(true, true, "test_mode_auto_confirm");
         }
+        StepScope scope = stepScope.get();
+        if (scope != null && scope.approved) return new Decision(true, false, "user_confirmed_step");
         ConfirmationChannel c = channel;
         if (c == null) return new Decision(false, false, "no_confirmation_channel");
-        boolean ok = c.requestConfirmation(actionId, summary);
+        boolean ok = c.requestConfirmation(actionId, scope == null ? summary : scope.summary);
+        if (ok && scope != null) scope.approved = true;
         return new Decision(ok, false, ok ? "user_confirmed" : "user_rejected");
     }
 }

@@ -31,9 +31,15 @@ public final class CloudPlannerAdapter {
     public static final String KEY_MODEL = "model";
 
     private final Context context;
+    private volatile HttpURLConnection activePlan;
 
     public CloudPlannerAdapter(Context context) {
         this.context = context.getApplicationContext();
+    }
+
+    public void cancel() {
+        HttpURLConnection connection = activePlan;
+        if (connection != null) new Thread(connection::disconnect, "cancel-cloud-plan").start();
     }
 
     public boolean isConfigured() {
@@ -96,6 +102,7 @@ public final class CloudPlannerAdapter {
             body.put("messages", msgs);
 
             conn = (HttpURLConnection) new URL(baseUrl).openConnection();
+            conn.setInstanceFollowRedirects(false);
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(8000);
             // 推理型模型（如 spark-x2.6）先推理后回答，15s 不够，实测 ping 会被误判成"连接失败"。
@@ -204,6 +211,9 @@ public final class CloudPlannerAdapter {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(baseUrl).openConnection();
+            activePlan = conn;
+            conn.setInstanceFollowRedirects(false);
+            if (Thread.currentThread().isInterrupted()) throw new IOException("planning cancelled");
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(8000);
             // 推理型模型（如 spark-x2.6）先产出推理再产出 JSON：实测普通规划约 20s，
@@ -222,7 +232,7 @@ public final class CloudPlannerAdapter {
             try (InputStream in = responseStream) {
                 resp = readAll(in);
             }
-            if (code >= 400) throw new IOException("cloud planner http " + code);
+            if (code < 200 || code >= 300) throw new IOException("cloud planner http " + code);
             android.util.Log.i("CloudPlannerAdapter", "plan http " + code + " bytes=" + resp.length());
 
             JSONObject root = new JSONObject(resp);
@@ -232,14 +242,14 @@ public final class CloudPlannerAdapter {
             JSONObject taskJson = com.agentruntime.dsl.OutputFormat.parseObject(content);
             DslParser.ValidationResult vr = DslParser.validateTaskJson(taskJson);
             if (!vr.ok) throw new JSONException("cloud plan schema invalid: " + vr.error);
-            // 记录模型给出的步骤与参数：规划错误（包名写错、text 猜错）只能从这里看。
-            android.util.Log.i("CloudPlannerAdapter", "plan steps " + taskJson.optJSONArray("steps"));
+            android.util.Log.i("CloudPlannerAdapter", "validated steps=" + taskJson.getJSONArray("steps").length());
             return DslParser.taskFromJson(taskJson);
         } catch (IOException e) {
             android.util.Log.w("CloudPlannerAdapter", "plan transport failure: "
-                    + e.getClass().getName() + ": " + e.getMessage());
+                    + e.getClass().getSimpleName());
             throw e;
         } finally {
+            activePlan = null;
             if (conn != null) conn.disconnect();
         }
     }
@@ -301,13 +311,6 @@ public final class CloudPlannerAdapter {
     }
 
     private static String readAll(InputStream in) throws IOException {
-        if (in == null) return "";
-        byte[] buf = new byte[8192];
-        StringBuilder sb = new StringBuilder();
-        int n;
-        while ((n = in.read(buf)) > 0) {
-            sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
-        }
-        return sb.toString();
+        return com.agentruntime.network.ResponseBody.read(in);
     }
 }

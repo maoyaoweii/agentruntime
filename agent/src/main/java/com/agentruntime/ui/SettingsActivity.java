@@ -447,10 +447,10 @@ public final class SettingsActivity extends Activity {
             tvLocalState.setText("未启用——规划全部走本地规则，必要时走云端");
         } else if (ok) {
             UiKit.setBadge(tvLocalState, "可用", UiKit.Badge.OK);
-            tvLocalState.setText(backend.toUpperCase() + " · " + probe.optString("runtime", ""));
+            tvLocalState.setText(backend.toUpperCase(java.util.Locale.ROOT) + " · " + probe.optString("runtime", ""));
         } else {
             UiKit.setBadge(tvLocalState, "不可用", UiKit.Badge.DANGER);
-            tvLocalState.setText(backend.toUpperCase() + " 不可用 · "
+            tvLocalState.setText(backend.toUpperCase(java.util.Locale.ROOT) + " 不可用 · "
                     + probe.optString("runtime", "原因未知"));
         }
     }
