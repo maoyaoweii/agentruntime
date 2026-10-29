@@ -1,0 +1,133 @@
+[
+  {
+    "apk": "agent",
+    "size_kb": 36115.4,
+    "dex_files": [
+      "classes.dex",
+      "classes12.dex",
+      "classes13.dex",
+      "classes2.dex",
+      "classes3.dex",
+      "classes5.dex",
+      "classes7.dex",
+      "classes10.dex",
+      "classes11.dex",
+      "classes14.dex",
+      "classes4.dex",
+      "classes6.dex",
+      "classes8.dex",
+      "classes9.dex"
+    ],
+    "skill_files": 32,
+    "abis": [
+      "arm64-v8a",
+      "x86_64"
+    ],
+    "classes_found": 42,
+    "classes_missing": [],
+    "new_actions_in_dex": [
+      "tap_xy",
+      "swipe_xy",
+      "long_press_xy",
+      "screenshot",
+      "visual_tap",
+      "read_page",
+      "navigate",
+      "page_click",
+      "page_find",
+      "observe",
+      "set_volume",
+      "get_volume",
+      "set_brightness",
+      "clipboard_set",
+      "clipboard_get",
+      "media_key",
+      "vibrate",
+      "open_settings_page",
+      "list_apps",
+      "read_file",
+      "write_file",
+      "ime_commit",
+      "ime_read",
+      "ime_key"
+    ],
+    "skill_ids": [
+      "agent_test.handle_dialog",
+      "agent_test.open_chat",
+      "agent_test.open_chat_with_dialog",
+      "agent_test.open_settings",
+      "agent_test.read_wifi",
+      "agent_test.send_file",
+      "agent_test.send_text",
+      "notes.create_note",
+      "sys.clipboard_copy",
+      "sys.close_dialogs",
+      "sys.coordinate_smoke",
+      "sys.file_delete",
+      "sys.file_io_probe",
+      "sys.file_ops",
+      "sys.ime_input",
+      "sys.launch_and_tap_text",
+      "sys.media_control",
+      "sys.notifications",
+      "sys.observe",
+      "sys.open_clock",
+      "sys.open_settings_page",
+      "sys.screenshot",
+      "sys.swipe",
+      "sys.tap_text",
+      "sys.tool_smoke",
+      "sys.toolkit",
+      "sys.ui_launch_tap",
+      "vision.tap_target",
+      "web.browse_local_page",
+      "web.click_selector",
+      "web.find_text",
+      "web.open_and_read"
+    ],
+    "models": {
+      "jev_decider.json": {
+        "bytes": 552,
+        "version": "1.0",
+        "weights": 10
+      },
+      "intent_nb.json": {
+        "bytes": 17425,
+        "version": "1.0"
+      }
+    },
+    "res_entries": 48,
+    "manifest": {
+      "MainActivity": "OK",
+      "ConsoleActivity": "OK",
+      "SettingsActivity": "OK",
+      "SkillsActivity": "OK",
+      "BrowserActivity": "OK",
+      "OverlayService": "OK",
+      "TileService": "OK",
+      "ImeService": "OK",
+      "A11yService": "OK",
+      "QS_TILE action": "OK",
+      "InputMethod action": "OK",
+      "shortcuts meta": "OK",
+      "ACCESS_NETWORK_STATE": "OK",
+      "SYSTEM_ALERT_WINDOW": "OK",
+      "FOREGROUND_SERVICE_SPECIAL_USE": "OK",
+      "WRITE_SETTINGS": "OK",
+      "VIBRATE": "OK",
+      "foregroundServiceType attr": "OK"
+    }
+  },
+  {
+    "apk": "agenttestapp",
+    "size_kb": 26.5,
+    "dex_files": [
+      "classes.dex",
+      "classes2.dex"
+    ],
+    "skill_files": 0,
+    "manifest": {
+      "TestApp": "OK"
+    }
+  }
+]

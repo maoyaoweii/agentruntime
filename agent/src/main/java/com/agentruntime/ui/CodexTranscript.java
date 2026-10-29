@@ -61,6 +61,8 @@ public final class CodexTranscript {
     /** 用户发言：主导航靠左竖线 + 淡底，一眼能和机器输出区分开。 */
     public void addUser(String text) {
         TextView tv = mono(text, R.color.text_primary, 13.5f);
+        tv.setTypeface(android.graphics.Typeface.DEFAULT);
+        tv.setTextSize(15f);
         tv.setBackgroundResource(R.drawable.bg_turn_user);
         tv.setPadding(UiKit.dp(ctx, 12), UiKit.dp(ctx, 10),
                 UiKit.dp(ctx, 10), UiKit.dp(ctx, 10));
@@ -70,6 +72,8 @@ public final class CodexTranscript {
     /** 一段说明性输出（规划器的解释、模型回答）。 */
     public void addAssistant(String text) {
         TextView tv = mono(text, R.color.text_primary, 13.5f);
+        tv.setTypeface(android.graphics.Typeface.DEFAULT);
+        tv.setTextSize(15f);
         add(tv, 8);
     }
 
@@ -104,10 +108,10 @@ public final class CodexTranscript {
     /** 分组标题，形如 `── 计划 ───────`。 */
     public void addSection(String label) {
         TextView tv = new TextView(ctx);
-        tv.setText("\u2500\u2500 " + label + " " + repeat('\u2500', Math.max(6, 26 - label.length() * 2)));
-        tv.setTextSize(10.5f);
+        tv.setText(label);
+        tv.setTextSize(12f);
         tv.setTextColor(color(R.color.text_tertiary));
-        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        tv.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         tv.setLetterSpacing(0.1f);
         add(tv, 12);
     }

@@ -71,12 +71,16 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
         btnRun = findViewById(R.id.btn_run);
         etGoal = findViewById(R.id.et_goal);
         cbAutoConfirm = findViewById(R.id.cb_auto_confirm);
+        cbAutoConfirm.setVisibility(BuildConfig.DEBUG ? View.VISIBLE : View.GONE);
 
         tx = new CodexTranscript(scroll, transcript);
 
         rom = RomInfo.detect(this);
 
-        btnRun.setOnClickListener(v -> startFromInput());
+        btnRun.setOnClickListener(v -> {
+            if (busy || TaskRunner.isBusy()) TaskRunner.cancel();
+            else startFromInput();
+        });
         findViewById(R.id.btn_console).setOnClickListener(v -> openConsole());
         findViewById(R.id.btn_skills).setOnClickListener(v -> open(SkillsActivity.class));
         findViewById(R.id.btn_settings_top).setOnClickListener(v -> open(SettingsActivity.class));
@@ -89,9 +93,8 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
         findViewById(R.id.chip_overlay).setOnClickListener(v -> toggleOverlay());
         findViewById(R.id.chip_perms).setOnClickListener(v -> requestAllPermissions());
 
-        tvVersion.setText("v" + BuildConfig.VERSION_NAME + "  api" + rom.sdk
-                + "  act" + com.agentruntime.dsl.ActionSpec.ActionType.values().length
-                + "  sk" + (AgentApp.get() == null ? 0 : AgentApp.get().skillEngine().skillIds().size()));
+        tvVersion.setText("v" + BuildConfig.VERSION_NAME + " · "
+                + (AgentApp.get() == null ? 0 : AgentApp.get().skillEngine().skillIds().size()) + " 项技能");
 
         if (savedInstanceState != null) {
             String goal = savedInstanceState.getString("goal");
@@ -101,7 +104,7 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
             // 而不是留一块空白——流水本身就是状态，不该因为转屏丢掉。
             replayHistory(savedInstanceState.getString("task_goal", ""));
         } else {
-            showWelcome();
+            replayHistory("");
         }
 
         syncBusyFromBus();
@@ -118,6 +121,10 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
     @Override
     protected void onStart() {
         super.onStart();
+        if (!TaskBus.get().recent().isEmpty()) {
+            tx.clear();
+            replayHistory(lastTaskGoal);
+        }
         TaskBus.get().subscribe(this);
     }
 
@@ -154,50 +161,52 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
         statusRow.removeAllViews();
 
         boolean a11y = AgentAccessibilityService.isRunning();
-        addChip("a11y", a11y ? "on" : "off", a11y ? Kind.OK : Kind.BAD);
+        addChip("无障碍", a11y ? "已连接" : "待开启", a11y ? Kind.OK : Kind.WARN);
 
         boolean cap = ScreenCapturer.supported();
-        addChip("cap", cap ? "on" : "no", cap ? Kind.OK : Kind.WARN);
+        addChip("截图", cap && a11y ? "可用" : "待就绪", cap && a11y ? Kind.OK : Kind.WARN);
 
         boolean ovlPerm = UiKit.hasOverlayPermission(this);
         boolean ovlOn = OverlayService.isRunning();
-        addChip("ovl", ovlOn ? "on" : (ovlPerm ? "idle" : "off"),
+        addChip("悬浮助手", ovlOn ? "已开启" : (ovlPerm ? "可开启" : "待授权"),
                 ovlOn ? Kind.OK : (ovlPerm ? Kind.WARN : Kind.DIM));
 
         JSONObject probe = app.localModels().probe();
         boolean localOk = probe.optBoolean("available", false);
         String backend = probe.optString("backend", "");
-        addChip("mdl", localOk ? (backend.isEmpty() ? "on" : backend) : "off",
+        addChip("本地模型", localOk ? "已就绪" : "未配置",
                 localOk ? Kind.OK : Kind.DIM);
 
         boolean ime = AgentImeService.isSelected(this);
-        addChip("ime", ime ? "on" : "off", ime ? Kind.OK : Kind.DIM);
+        addChip("输入法", ime ? "已启用" : "可选", ime ? Kind.OK : Kind.DIM);
 
         boolean cloud = app.modelRouter().cloud().isConfigured();
-        addChip("cloud", cloud ? "cfg" : "-", cloud ? Kind.OK : Kind.DIM);
+        addChip("云端规划", cloud ? "已配置" : "未配置", cloud ? Kind.OK : Kind.DIM);
 
         int skills = app.skillEngine().skillIds().size();
-        addChip("skills", String.valueOf(skills), Kind.DIM);
+        addChip("技能", skills + " 项", Kind.DIM);
 
         // 权限单独一项：被拒之后所有"看起来莫名其妙失败"的操作，根因通常在这里，
         // 必须能在首页一眼看到，而不是去设置页里数。
         int total = UiKit.runtimePermissions(this).length;
         int okPerms = UiKit.grantedRuntimePermissions(this).length;
-        addChip("perm", okPerms + "/" + total,
+        addChip("权限", okPerms + "/" + total,
                 okPerms == total ? Kind.OK : Kind.WARN);
 
         // ROM 单独一项：多厂商适配的结论必须能在界面上看见，否则用户无从判断
         // "我这台机器为什么和教程不一样"。
-        addChip("rom", rom.rom.split(" ")[0], rom.isDomesticRom() ? Kind.WARN : Kind.DIM);
+        addChip("系统", rom.rom.split(" ")[0], rom.isDomesticRom() ? Kind.WARN : Kind.DIM);
     }
 
     private enum Kind { OK, WARN, BAD, DIM }
 
     private void addChip(String key, String value, Kind kind) {
         TextView tv = new TextView(this);
-        tv.setText(key + " " + value);
-        tv.setTextSize(11f);
-        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        tv.setText(key + " · " + value);
+        tv.setTextSize(12f);
+        tv.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        tv.setMinHeight(UiKit.dp(this, 40));
+        tv.setBackgroundResource(R.drawable.bg_chip);
         int color;
         switch (kind) {
             case OK:
@@ -214,26 +223,29 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
                 break;
         }
         tv.setTextColor(getColor(color));
-        tv.setPadding(0, 0, UiKit.dp(this, 14), 0);
-        statusRow.addView(tv);
+        tv.setPadding(UiKit.dp(this, 12), UiKit.dp(this, 8), UiKit.dp(this, 12), UiKit.dp(this, 8));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                statusRow.getOrientation() == LinearLayout.VERTICAL ? -1 : -2, -2);
+        params.setMarginEnd(UiKit.dp(this, 8));
+        params.bottomMargin = statusRow.getOrientation() == LinearLayout.VERTICAL ? UiKit.dp(this, 8) : 0;
+        tv.setFocusable(true);
+        tv.setOnClickListener(v -> open(SettingsActivity.class));
+        tv.setContentDescription(key + "，" + value + "，点击打开设置");
+        statusRow.addView(tv, params);
     }
 
     // ------------------------------------------------------------ 空态
 
     private void showWelcome() {
-        tx.addAssistant("agent runtime v" + BuildConfig.VERSION_NAME);
-        tx.addNote("env", rom.summary());
-
-        boolean a11y = AgentAccessibilityService.isRunning();
-        if (a11y) {
-            tx.addNote("ready", "无障碍已连接，可以直接下达任务");
-        } else {
-            tx.addWarn("无障碍未开启：先点右上角「设置」打开，否则无法操作其他应用");
-        }
-        tx.addSection("可以试试");
-        tx.addNote("", "\u203A 观察当前设备环境");
-        tx.addNote("", "\u203A 截图留证");
-        tx.addNote("", "\u203A 运行工具冒烟");
+        View welcome = getLayoutInflater().inflate(R.layout.view_welcome, transcript, false);
+        TextView ready = welcome.findViewById(R.id.welcome_status);
+        ready.setText(AgentAccessibilityService.isRunning()
+                ? "✓  设备已连接 · 可以开始" : "连接设备能力，开始第一次任务  →");
+        ready.setOnClickListener(v -> open(SettingsActivity.class));
+        welcome.findViewById(R.id.welcome_observe).setOnClickListener(v -> runQuick("观察当前设备环境"));
+        welcome.findViewById(R.id.welcome_screenshot).setOnClickListener(v -> runQuick("截图留证"));
+        welcome.findViewById(R.id.welcome_skills).setOnClickListener(v -> open(SkillsActivity.class));
+        transcript.addView(welcome);
     }
 
     /** 旋转后重放本次会话。事件流本身就是唯一事实来源，界面只是它的投影。 */
@@ -274,7 +286,7 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
     }
 
     private void runGoal(String goal) {
-        if (busy) {
+        if (busy || TaskRunner.isBusy()) {
             UiKit.toast(this, "上一个任务还在执行");
             return;
         }
@@ -302,7 +314,7 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
         // 目标应用的定位会全部超时；任务进度交给浮窗展示，用户仍能全程看到。
         if (OverlayService.isRunning()) moveTaskToBack(true);
 
-        boolean auto = cbAutoConfirm.isChecked();
+        boolean auto = BuildConfig.DEBUG && cbAutoConfirm.isChecked();
         new Thread(() -> {
             String status = "ERROR";
             try {
@@ -326,12 +338,13 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
     }
 
     private void setRunningUi(boolean running) {
-        btnRun.setEnabled(!running);
-        btnRun.setAlpha(running ? 0.4f : 1f);
-        btnRun.setText(running ? "运行中" : "运行");
+        btnRun.setEnabled(true);
+        btnRun.setText(running ? "停止任务" : "开始任务");
+        btnRun.setBackgroundResource(running ? R.drawable.bg_btn_danger : R.drawable.bg_btn_primary);
+        btnRun.setTextColor(getColor(running ? R.color.danger : R.color.text_on_brand));
         etGoal.setEnabled(!running);
         if (!running) {
-            tvRunning.setText("");
+            tvRunning.setText("按你的指令，逐步执行");
         }
     }
 
@@ -442,7 +455,7 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
     }
 
     private void syncBusyFromBus() {
-        busy = TaskBus.get().running();
+        busy = TaskBus.get().running() || TaskRunner.isBusy();
         setRunningUi(busy);
         if (busy) {
             tvRunning.setText(TaskBus.get().progressText());
@@ -461,6 +474,7 @@ public final class MainActivity extends Activity implements TaskBus.Listener {
     public void onEvent(TaskBus.Event event) {
         if (event == null) return;
         appendEvent(event, true);
+        syncBusyFromBus();
         if (TaskBus.get().running()) {
             tvRunning.setText(TaskBus.get().progressText());
         }

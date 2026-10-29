@@ -11,7 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="@color/brand"
+        android:background="@color/surface"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
         android:paddingEnd="16dp"
@@ -20,10 +20,10 @@
 
         <ImageView
             android:id="@+id/btn_back"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="11dp"
-            android:src="@drawable/ic_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_back" android:tint="@color/text_secondary" android:focusable="true" android:clickable="true"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="返回" />
 
@@ -33,7 +33,7 @@
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:text="任务控制台"
-            android:textColor="@color/text_on_brand"
+            android:textColor="@color/text_primary"
             android:textSize="17sp"
             android:textStyle="bold" />
 
@@ -43,7 +43,7 @@
             android:layout_height="wrap_content"
             android:padding="8dp"
             android:text="清空"
-            android:textColor="#CCD6FFFF"
+            android:textColor="@color/brand"
             android:textSize="13sp" />
     </LinearLayout>
 
@@ -89,7 +89,7 @@
                     android:paddingTop="3dp"
                     android:paddingBottom="3dp"
                     android:text="空闲"
-                    android:textSize="11sp" />
+                    android:textSize="13sp" />
             </LinearLayout>
 
             <ProgressBar
@@ -128,7 +128,7 @@
                 android:lineSpacingExtra="3dp"
                 android:text=""
                 android:textColor="@color/console_text"
-                android:textSize="11sp" />
+                android:textSize="13sp" />
         </ScrollView>
 
         <!-- 操作 -->
