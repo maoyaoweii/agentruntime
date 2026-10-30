@@ -2,6 +2,19 @@
 <resources>
     <item name="dsh_composer" type="id" />
     <item name="dsh_send" type="id" />
+    <item name="dsh_bottom_navigation" type="id" />
+    <item name="dsh_tab_chat" type="id" />
+    <item name="dsh_tab_sessions" type="id" />
+    <item name="dsh_tab_plugins" type="id" />
+    <item name="dsh_tab_settings" type="id" />
+    <item name="dsh_connection" type="id" />
+    <item name="dsh_status" type="id" />
+    <item name="dsh_model_url" type="id" />
+    <item name="dsh_model_name" type="id" />
+    <item name="dsh_api_key" type="id" />
+    <item name="dsh_reveal_key" type="id" />
+    <item name="dsh_protocol" type="id" />
+    <item name="dsh_thinking" type="id" />
     <style name="DshBaseTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#4D6BFE</item>

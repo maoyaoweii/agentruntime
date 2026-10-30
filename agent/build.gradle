@@ -10,8 +10,8 @@ android {
         applicationId 'com.agentruntime.agent'
         minSdk 26
         targetSdk 34
-        versionCode 9
-        versionName '2.0.0-mobile-preview'
+        versionCode 10
+        versionName '2.0.0-mobile-preview.2'
         testInstrumentationRunner 'com.agentruntime.DeviceSmokeInstrumentation'
         // 两个 ABI 都打进去：
         // - arm64-v8a 覆盖 2020 年后的真机（99% 的现役设备）
@@ -51,6 +51,8 @@ android {
         // Robolectric 要读真实资源（layout/color/style），必须打开
         unitTests.includeAndroidResources = true
         unitTests.all {
+            systemProperty 'dsh.capture.ui', project.findProperty('dsh.capture.ui') ?: 'false'
+            systemProperty 'dsh.capture.dir', layout.buildDirectory.dir('ui-captures').get().asFile.absolutePath
             // Robolectric 会在测试期去 Maven Central 拉 android-all jar，
             // 这一步走的是测试 JVM 自己的网络栈，不继承 Gradle 的代理配置，
             // 所以要把代理显式传进去，否则国内网络下会卡到超时。

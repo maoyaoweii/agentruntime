@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.*;
 import com.agentruntime.AgentApp;
 import com.agentruntime.dsh.DshGraph;
@@ -11,21 +12,34 @@ import com.agentruntime.dsh.runtime.DshController;
 import com.agentruntime.dsh.store.SessionStore;
 import java.text.DateFormat;
 import java.util.Date;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 public final class SessionsActivity extends Activity {
     private DshGraph graph;
     @Override public void onCreate(Bundle state) { super.onCreate(state); graph=AgentApp.get().dsh(); render(); }
     private void render() {
-        LinearLayout page=UiKit.page(this,"你的会话","随时回来继续。消息与工具记录保存在这部手机，最近 100 个会话显示在这里。");
-        page.addView(UiKit.button(this,"＋  开始新对话",true,()->open(graph.sessions.createSession().id)),UiKit.matchWrap()); UiKit.gap(page,24);
+        LinearLayout page=UiKit.page(this,"你的会话","随时回来继续");
+        Button create=UiKit.button(this,"开始新对话",true,()->open(graph.sessions.createSession().id));
+        create.setCompoundDrawablesRelative(new DshIcons(this,DshIcons.Name.PLUS,UiKit.WHITE,20,false),null,null,null); create.setCompoundDrawablePadding(UiKit.dp(this,8));
+        page.addView(create,UiKit.matchWrap()); UiKit.gap(page,18);
         for(SessionStore.Session session:graph.sessions.sessions()) {
-            LinearLayout card=UiKit.card(this); TextView title=UiKit.bold(this,UiKit.visible(session.title),17,UiKit.INK); card.addView(title);
-            UiKit.gap(card,4); String date=DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(new Date(session.updated));
-            DshController.View active=graph.controller.active(); card.addView(UiKit.text(this,date+(active!=null&&active.session.equals(session.id)?"  ·  正在运行":""),12,UiKit.MUTED)); UiKit.gap(card,14);
-            LinearLayout actions=UiKit.row(this); Button resume=UiKit.button(this,"继续对话  ↗",false,()->open(session.id)); actions.addView(resume,new LinearLayout.LayoutParams(0,-2,1));
-            Button more=UiKit.button(this,"···",false,()->menu(session)); more.setContentDescription("管理会话 "+UiKit.visible(session.title)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(UiKit.dp(this,52),UiKit.dp(this,48)); p.setMarginStart(UiKit.dp(this,10)); actions.addView(more,p); card.addView(actions);
+            LinearLayout card=UiKit.card(this); UiKit.pad(card,14,12,14,12);
+            LinearLayout row=UiKit.row(this); row.addView(UiKit.iconBadge(this,DshIcons.Name.SESSIONS),new LinearLayout.LayoutParams(UiKit.dp(this,42),UiKit.dp(this,42)));
+            LinearLayout labels=UiKit.column(this); LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(0,-2,1); labelParams.setMarginStart(UiKit.dp(this,12));
+            TextView title=UiKit.bold(this,UiKit.visible(session.title),16,UiKit.INK); title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END); labels.addView(title);
+            DshController.View active=graph.controller.active(); labels.addView(UiKit.text(this,formatDate(session.updated)+(active!=null&&active.session.equals(session.id)?"  ·  正在运行":""),12,UiKit.MUTED));
+            row.addView(labels,labelParams); row.addView(UiKit.iconButton(this,DshIcons.Name.MORE,"管理会话 "+UiKit.visible(session.title),()->menu(session)),new LinearLayout.LayoutParams(UiKit.dp(this,48),UiKit.dp(this,48))); card.addView(row);
+            LinearLayout actions=UiKit.row(this); View spacer=new View(this); actions.addView(spacer,new LinearLayout.LayoutParams(0,1,1));
+            Button resume=UiKit.tonalButton(this,"继续对话",DshIcons.Name.UP_RIGHT,()->open(session.id)); actions.addView(resume,new LinearLayout.LayoutParams(-2,UiKit.dp(this,48))); card.addView(actions);
+            card.setOnClickListener(v->open(session.id)); card.setFocusable(true); card.setContentDescription("会话 "+UiKit.visible(session.title)+"，继续对话");
             page.addView(card,UiKit.matchWrap()); UiKit.gap(page,12);
         }
+    }
+    private String formatDate(long timestamp) {
+        Date date=new Date(timestamp); LocalDate day=date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate(),today=LocalDate.now();
+        String prefix=day.equals(today)?"今天":day.equals(today.minusDays(1))?"昨天":DateFormat.getDateInstance(DateFormat.SHORT).format(date);
+        return prefix+" "+DateFormat.getTimeInstance(DateFormat.SHORT).format(date);
     }
     private void open(String id) { startActivity(new Intent(this,DshActivity.class).putExtra("session",id).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP)); finish(); }
     private void menu(SessionStore.Session session) {

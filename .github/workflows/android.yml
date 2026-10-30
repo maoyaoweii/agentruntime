@@ -5,6 +5,9 @@ on:
     branches: [main, 'codex/dsh-mobile-*']
 permissions:
   contents: read
+concurrency:
+  group: android-dsh-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -20,6 +23,15 @@ jobs:
           gradle-version: '8.8'
       - name: Install Android SDK components
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"'
+      - name: Render native Android view previews
+        run: gradle --no-daemon --console=plain -Pdsh.capture.ui=true :agent:testDebugUnitTest --tests 'com.agentruntime.dsh.DshScreenshotTest'
+      - name: Save native Android view previews
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dsh-ui-previews
+          retention-days: 14
+          if-no-files-found: error
+          path: agent/build/ui-captures/
       - name: Test, lint and build
         run: gradle --no-daemon --console=plain :agent:testDebugUnitTest :agent:testReleaseUnitTest :agent:lintDebug :agent:lintRelease :agent:assembleDebug :agent:assembleRelease
       - name: Save build and verification reports

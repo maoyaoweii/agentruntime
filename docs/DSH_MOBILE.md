@@ -2,6 +2,8 @@
 
 Android 独立助手：在手机上管理会话、调用模型、运行已启用的手机工具与技能。入口是新的原生 DSH Mobile 界面，不需要桌面电脑、Termux 或本地 Node 服务。
 
+预览版 2 根据 [四屏设计稿](design/dsh-mobile-ui-reference.png) 调整了对话、会话、插件和连接设置页面，统一图标与底部导航；设置中可临时显示自己输入的密钥，离开页面时会重新隐藏。
+
 这是本仓库的独立 Android 实现，参考 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/tree/f3803c96974ad4a94195fb97e5c637e9c2a3afe3) 的架构，不是 DeepSeek 官方客户端。桌面版 Node / Cordis 插件不能直接装进本应用。
 
 ## 安装与开始
@@ -71,7 +73,7 @@ gradle :agent:testDebugUnitTest :agent:testReleaseUnitTest :agent:lintDebug :age
 
 仓库未附 Gradle Wrapper，需安装 Gradle 或由 CI 的 setup-gradle 提供；`local.properties` 填写个人 SDK 路径，不应提交。正式发行需要自行设置私有签名。GitHub Actions 只构建与测试，不配置 API Key、不自动调用外部模型。
 
-本轮验证覆盖真实回环 HTTP + SSE、确认后的工作区写入、工具返回及下一轮历史、加密凭据、撤销与取消、服务失败恢复，以及 320 / 411 dp 手机、横屏和平板的原生布局测量。全部模型测试使用本机模拟服务和合成密钥，没有实际调用付费模型。详见 [机器可读验证记录](../verification/dsh-mobile/verification.json)：Debug 379 项（378 通过、1 项 Windows 权限语义用例跳过），Release 263 项全部通过，双构建 Lint 零错误；仍有既有及本次中文文本等非阻断警告，没有关闭错误检查门槛。
+验证覆盖真实回环 HTTP + SSE、确认后的工作区写入、工具返回及下一轮历史、加密凭据、撤销与取消、服务失败恢复，以及 320 / 411 dp 手机、横屏和平板的原生布局测量。全部模型测试使用本机模拟服务和合成密钥，没有实际调用付费模型。底部导航、插件开关、设置页旋转、密钥隐藏和通知返回草稿也有回归检查。上一预览版的 [机器可读验证记录](../verification/dsh-mobile/verification.json) 保留作为历史记录，本次构建结果以 GitHub Actions 检查为准。
 
 当前环境无可用 Android 设备，且固件未开启虚拟化，未完成本构建的真机安装、系统权限弹窗、Keystore 硬件实现、跨应用技能及厂商后台策略验收。HTML 外观预览只用于查看视觉设计，不是真机截图，也不提供模型功能。最终测试数量和文件 SHA-256 见随包验证记录。
 

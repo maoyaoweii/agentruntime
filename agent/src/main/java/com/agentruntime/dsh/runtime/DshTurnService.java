@@ -1,6 +1,7 @@
 package com.agentruntime.dsh.runtime;
 
 import android.app.*;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
@@ -30,7 +31,7 @@ public final class DshTurnService extends Service {
         try {
             NotificationManager manager=getSystemService(NotificationManager.class);
             manager.createNotificationChannel(new NotificationChannel("dsh_turns","DSH 回复与手机任务",NotificationManager.IMPORTANCE_LOW));
-            Intent open=new Intent(this,DshActivity.class).putExtra("session",active.session).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            Intent open=conversationIntent(this,active.session);
             Intent stop=new Intent(this,DshTurnService.class).setAction(STOP).setData(android.net.Uri.parse("dsh://turn/"+id)).putExtra(JOB,id);
             Notification notification=new Notification.Builder(this,"dsh_turns").setSmallIcon(R.drawable.ic_bot)
                     .setContentTitle("DSH Mobile 正在工作").setContentText("正在生成回复或运行你发起的手机任务")
@@ -46,6 +47,10 @@ public final class DshTurnService extends Service {
             controller.abandon(id); owned=null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf();
         }
         return START_NOT_STICKY;
+    }
+    static Intent conversationIntent(Context context,String session) {
+        return new Intent(context,DshActivity.class).putExtra("session",session)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
     }
     @Override public void onDestroy() {
         if(owned!=null) AgentApp.get().dsh().controller.cancel(owned,"SERVICE_STOPPED");

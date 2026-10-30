@@ -21,6 +21,7 @@ public final class DshActivity extends Activity {
     private String session;
     private boolean tools=true;
     private TextView subtitle,status;
+    private Button connection;
     private EditText composer;
     private Button send,mode;
     private ChatRenderer renderer;
@@ -40,34 +41,50 @@ public final class DshActivity extends Activity {
     }
     private void build() {
         LinearLayout root=UiKit.column(this); root.setBackgroundColor(UiKit.BG);
-        LinearLayout top=UiKit.row(this); UiKit.pad(top,20,12,16,10);
-        TextView mark=UiKit.bold(this,"ds",23,UiKit.WHITE); mark.setGravity(Gravity.CENTER); mark.setBackground(UiKit.shape(this,UiKit.BLUE,0,16));
-        mark.setContentDescription("DSH Mobile"); top.addView(mark,new LinearLayout.LayoutParams(UiKit.dp(this,46),UiKit.dp(this,46)));
+        root.setFocusableInTouchMode(true); root.requestFocus();
+        LinearLayout top=UiKit.row(this); UiKit.pad(top,20,12,16,6);
+        TextView mark=UiKit.title(this,"ds",23); mark.setTextColor(UiKit.WHITE); mark.setGravity(Gravity.CENTER); mark.setBackground(UiKit.shape(this,UiKit.BLUE,0,12));
+        mark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); top.addView(mark,new LinearLayout.LayoutParams(UiKit.dp(this,42),UiKit.dp(this,42)));
         LinearLayout heading=UiKit.column(this); LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(0,-2,1); hp.setMarginStart(UiKit.dp(this,12));
-        heading.addView(UiKit.bold(this,"DSH Mobile",21,UiKit.INK)); subtitle=UiKit.text(this,"你的随身智能助手",11,UiKit.MUTED); subtitle.setMaxLines(1); heading.addView(subtitle); top.addView(heading,hp);
-        Button fresh=UiKit.button(this,"＋",false,this::newSession); fresh.setTextSize(23); fresh.setContentDescription("新建对话"); top.addView(fresh,new LinearLayout.LayoutParams(UiKit.dp(this,48),UiKit.dp(this,48))); root.addView(top);
-        status=UiKit.text(this,"",12,UiKit.MUTED); UiKit.pad(status,22,4,22,9); status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); root.addView(status);
-        ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false); UiKit.pad(scroll,20,6,20,12);
+        heading.addView(UiKit.title(this,"DSH Mobile",20)); subtitle=UiKit.text(this,"你的随身智能助手",11,UiKit.MUTED); subtitle.setMaxLines(1); heading.addView(subtitle); top.addView(heading,hp);
+        ImageButton fresh=UiKit.iconButton(this,DshIcons.Name.PLUS,"新建对话",this::newSession); fresh.setBackground(UiKit.ripple(this,UiKit.WHITE,UiKit.LINE,24));
+        top.addView(fresh,new LinearLayout.LayoutParams(UiKit.dp(this,48),UiKit.dp(this,48))); root.addView(top);
+        LinearLayout connectionRow=UiKit.row(this); UiKit.pad(connectionRow,20,0,20,0);
+        connection=UiKit.button(this,"连接模型",false,()->UiKit.open(this,DshSettingsActivity.class)); connection.setId(com.agentruntime.agent.R.id.dsh_connection);
+        connection.setTextSize(12); connection.setMaxWidth(UiKit.dp(this,260)); connection.setSingleLine(true); connection.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        connection.setCompoundDrawablePadding(UiKit.dp(this,6)); connection.setBackground(UiKit.ripple(this,UiKit.WHITE,UiKit.LINE,24));
+        connectionRow.addView(connection,new LinearLayout.LayoutParams(-2,UiKit.dp(this,48))); root.addView(connectionRow);
+        status=UiKit.text(this,"",12,UiKit.MUTED); status.setId(com.agentruntime.agent.R.id.dsh_status); UiKit.pad(status,22,2,22,6); status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); root.addView(status);
+        ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false); UiKit.pad(scroll,20,4,20,8);
         LinearLayout transcript=UiKit.column(this); scroll.addView(transcript,new ScrollView.LayoutParams(-1,-2)); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         renderer=new ChatRenderer(this,transcript,scroll,this::suggest);
-        LinearLayout bottom=UiKit.column(this); UiKit.pad(bottom,16,8,16,8); bottom.setBackgroundColor(UiKit.BG);
-        LinearLayout compose=UiKit.row(this); compose.setBackground(UiKit.shape(this,UiKit.WHITE,UiKit.LINE,22)); UiKit.pad(compose,8,7,7,7);
-        composer=UiKit.input(this,"发消息，或让手机帮你做点事…",true); composer.setId(com.agentruntime.agent.R.id.dsh_composer); composer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        LinearLayout bottom=UiKit.column(this); UiKit.pad(bottom,16,6,16,5); bottom.setBackgroundColor(UiKit.BG);
+        LinearLayout composeCard=UiKit.column(this); UiKit.pad(composeCard,8,8,8,8); composeCard.setBackground(UiKit.shape(this,UiKit.WHITE,UiKit.LINE,22));
+        LinearLayout compose=UiKit.row(this);
+        composer=UiKit.input(this,"发消息，或让手机帮你做点事…",true); composer.setId(com.agentruntime.agent.R.id.dsh_composer); composer.setBackground(UiKit.shape(this,0xfff7f9ff,UiKit.LINE,12));
+        composer.setContentDescription("消息"); composer.setTextSize(14);
         composer.setMaxLines(4); composer.setMinLines(1); composer.setSaveEnabled(false); composer.setGravity(Gravity.TOP|Gravity.START);
         composer.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         composer.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(SessionStore.MAX_INPUT)});
-        compose.addView(composer,new LinearLayout.LayoutParams(0,-2,1)); send=UiKit.button(this,"发送",true,this::sendOrStop); send.setId(com.agentruntime.agent.R.id.dsh_send); compose.addView(send,new LinearLayout.LayoutParams(UiKit.dp(this,66),UiKit.dp(this,50))); bottom.addView(compose);
-        LinearLayout choices=UiKit.row(this); UiKit.gap(bottom,8);
-        mode=UiKit.button(this,"",false,()->{ tools=!tools; refresh(); }); mode.setTextSize(12); choices.addView(mode,new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1));
-        Button files=UiKit.button(this,"工作区 ↗",false,()->UiKit.open(this,WorkspaceActivity.class)); files.setTextSize(12); LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1); fp.setMarginStart(UiKit.dp(this,8)); choices.addView(files,fp); bottom.addView(choices); root.addView(bottom);
-        LinearLayout nav=UiKit.row(this); UiKit.pad(nav,16,6,16,10); nav.setBackgroundColor(UiKit.WHITE);
-        addTab(nav,"对话",true,()->renderer.toBottom()); addTab(nav,"会话",false,()->UiKit.open(this,SessionsActivity.class));
-        addTab(nav,"插件",false,()->UiKit.open(this,PluginsActivity.class)); addTab(nav,"设置",false,()->UiKit.open(this,DshSettingsActivity.class)); root.addView(nav);
+        compose.addView(composer,new LinearLayout.LayoutParams(0,-2,1)); send=UiKit.button(this,"发送",true,this::sendOrStop); send.setId(com.agentruntime.agent.R.id.dsh_send);
+        LinearLayout.LayoutParams sendParams=new LinearLayout.LayoutParams(UiKit.dp(this,68),UiKit.dp(this,50)); sendParams.setMarginStart(UiKit.dp(this,7)); compose.addView(send,sendParams); composeCard.addView(compose);
+        LinearLayout choices=UiKit.row(this); UiKit.gap(composeCard,8);
+        mode=UiKit.tonalButton(this,"手机助手",null,()->{ tools=!tools; refresh(); }); mode.setTextSize(12);
+        mode.setCompoundDrawablesRelative(new DshIcons(this,DshIcons.Name.PHONE,UiKit.LINK,19,false),null,null,null); mode.setCompoundDrawablePadding(UiKit.dp(this,8));
+        choices.addView(mode,new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1));
+        Button files=UiKit.tonalButton(this,"工作区",null,()->UiKit.open(this,WorkspaceActivity.class)); files.setTextColor(UiKit.INK); files.setTextSize(12);
+        files.setCompoundDrawablesRelative(new DshIcons(this,DshIcons.Name.FOLDER,UiKit.MUTED,19,false),null,null,null); files.setCompoundDrawablePadding(UiKit.dp(this,8));
+        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1); fp.setMarginStart(UiKit.dp(this,8)); choices.addView(files,fp); composeCard.addView(choices); bottom.addView(composeCard); root.addView(bottom);
+        LinearLayout nav=DshNavigation.bar(this,DshNavigation.Section.CHAT); root.addView(nav);
+        Runnable updateCompact=()->{
+            if(root.getHeight()==0) return;
+            boolean compact=composer.hasFocus()&&root.getHeight()<UiKit.dp(this,360);
+            int visibility=compact?View.GONE:View.VISIBLE;
+            if(nav.getVisibility()!=visibility) { nav.setVisibility(visibility); choices.setVisibility(visibility); top.setVisibility(visibility); connectionRow.setVisibility(visibility); }
+        };
+        root.addOnLayoutChangeListener((view,left,topEdge,right,bottomEdge,oldLeft,oldTop,oldRight,oldBottom)->updateCompact.run());
+        root.getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus,newFocus)->updateCompact.run());
         setContentView(root);
-    }
-    private void addTab(LinearLayout nav,String label,boolean selected,Runnable action) {
-        Button v=UiKit.button(this,label,false,action); v.setTextColor(selected?UiKit.BLUE:UiKit.MUTED); v.setBackground(UiKit.shape(this,selected?0xffeef1ff:UiKit.WHITE,0,14));
-        nav.addView(v,new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1));
     }
     private void suggest(String text) { composer.setText(text); composer.setSelection(text.length()); composer.requestFocus(); }
     private void newSession() {
@@ -93,13 +110,18 @@ public final class DshActivity extends Activity {
     private void refresh() {
         if(graph==null||isDestroyed()) return;
         SessionStore.Session current=graph.sessions.session(session); if(current==null) return;
-        subtitle.setText(UiKit.visible(current.title));
+        subtitle.setText("新对话".equals(current.title)?"你的随身智能助手":UiKit.visible(current.title));
         DshController.View active=graph.controller.active(); boolean running=active!=null;
-        status.setText(running?(active.session.equals(session)?active.status:"另一对话正在运行，可停止后再发送"):
-                (!graph.controller.lastError().isEmpty()?graph.controller.lastError():graph.provider.configured()?graph.provider.model()+"  ·  本机保存会话":"先在设置中连接模型，即可开始对话"));
-        send.setText(running?"停止":"发送"); mode.setText(tools?"◉  手机助手":"○  纯对话"); mode.setTextColor(tools?UiKit.BLUE:UiKit.MUTED); mode.setEnabled(!running);
+        boolean configured=graph.provider.configured(); String model=configured?graph.provider.model():"连接模型";
+        connection.setText(model); connection.setContentDescription(configured?"已保存模型配置："+model+"，点击设置":"连接模型，点击设置");
+        android.graphics.drawable.GradientDrawable dot=new android.graphics.drawable.GradientDrawable(); dot.setShape(android.graphics.drawable.GradientDrawable.OVAL); dot.setColor(configured?UiKit.LINK:UiKit.MUTED); dot.setBounds(0,0,UiKit.dp(this,7),UiKit.dp(this,7));
+        connection.setCompoundDrawablesRelative(dot,null,new DshIcons(this,DshIcons.Name.RIGHT,UiKit.MUTED,15,false),null);
+        String message=running?(active.session.equals(session)?active.status:"另一对话正在运行，可停止后再发送"):graph.controller.lastError();
+        status.setText(message); status.setVisibility(message.isEmpty()?View.GONE:View.VISIBLE);
+        send.setText(running?"停止":"发送"); mode.setText(tools?"手机助手":"纯对话"); mode.setTextColor(tools?UiKit.LINK:UiKit.MUTED); mode.setEnabled(!running);
+        mode.setContentDescription(tools?"手机助手模式，点击切换到纯对话":"纯对话模式，点击切换到手机助手");
         try { renderer.show(session,graph.sessions.events(session),active!=null&&active.session.equals(session)?active:null); }
-        catch(Exception e) { status.setText("读取会话失败，请重新打开应用"); }
+        catch(Exception e) { status.setText("读取会话失败，请重新打开应用"); status.setVisibility(View.VISIBLE); }
     }
     private void saveDraft() {
         if(composer!=null) getPreferences(0).edit().putString("session",session).putBoolean("tools",tools).putString("draft_"+session,composer.getText().toString()).apply();

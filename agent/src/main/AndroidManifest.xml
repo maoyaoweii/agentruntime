@@ -62,7 +62,7 @@
         <activity android:name="com.agentruntime.ui.MainActivity" android:exported="false" />
         <activity android:name="com.agentruntime.dsh.ui.SessionsActivity" android:exported="false" android:theme="@style/DshTheme" />
         <activity android:name="com.agentruntime.dsh.ui.PluginsActivity" android:exported="false" android:theme="@style/DshTheme" />
-        <activity android:name="com.agentruntime.dsh.ui.DshSettingsActivity" android:exported="false" android:theme="@style/DshTheme" />
+        <activity android:name="com.agentruntime.dsh.ui.DshSettingsActivity" android:exported="false" android:theme="@style/DshTheme" android:windowSoftInputMode="adjustResize" />
         <activity android:name="com.agentruntime.dsh.ui.WorkspaceActivity" android:exported="false" android:theme="@style/DshTheme" />
         <service android:name="com.agentruntime.dsh.runtime.DshTurnService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="dsh_mobile_turn: continue user-started model conversation and confirmed phone tools while another app is visible" />

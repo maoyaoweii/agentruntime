@@ -47,24 +47,24 @@ final class ChatRenderer {
         if(live!=null) { String text=active==null?"":active.live; live.setText(text); live.setVisibility(text.isEmpty()?View.GONE:View.VISIBLE); if(!text.isEmpty()&&follow) toBottom(); }
     }
     private void welcome() {
-        UiKit.gap(content,24);
-        TextView eyebrow=UiKit.bold(activity,"一部手机，一个工作空间",12,UiKit.BLUE); content.addView(eyebrow); UiKit.gap(content,10);
-        TextView title=UiKit.bold(activity,"你好，\n今天想做些什么？",30,UiKit.INK); title.setLineSpacing(UiKit.dp(activity,5),1); content.addView(title); UiKit.gap(content,14);
-        content.addView(UiKit.text(activity,"聊想法、整理文字，或让助手调用手机上的工具。对话和文件留在这部手机。",15,UiKit.MUTED)); UiKit.gap(content,26);
-        quick("◈","了解我的手机","查看设备状态与可用权限","请查看这部手机的环境状态，告诉我哪些手机工具已经就绪。");
-        quick("≡","发现手机技能","看看助手可以帮你完成什么","请列出可用的手机技能，按用途简单介绍，并标明需要确认的操作。");
-        quick("✎","记录一个新想法","整理内容，保存到本机工作区","帮我整理一份简短的今日计划。先询问我的安排，确认内容后保存到工作区。");
-        UiKit.gap(content,12); content.addView(UiKit.text(activity,"手机助手模式会按需调用已启用的插件。",11,UiKit.MUTED));
+        UiKit.gap(content,20);
+        TextView eyebrow=UiKit.bold(activity,"一部手机，一个工作空间",12,UiKit.LINK); content.addView(eyebrow); UiKit.gap(content,9);
+        TextView title=UiKit.title(activity,"你好，\n今天想做些什么？",30); title.setLineSpacing(UiKit.dp(activity,3),1); content.addView(title); UiKit.gap(content,11);
+        content.addView(UiKit.text(activity,"聊想法、整理文字，或让助手调用手机上的工具。",14,UiKit.MUTED)); UiKit.gap(content,21);
+        quick(DshIcons.Name.PHONE,"了解我的手机","查看设备状态与可用权限","请查看这部手机的环境状态，告诉我哪些手机工具已经就绪。");
+        quick(DshIcons.Name.GRID,"发现手机技能","看看助手可以帮你完成什么","请列出可用的手机技能，按用途简单介绍，并标明需要确认的操作。");
+        quick(DshIcons.Name.NOTE,"记录一个新想法","整理内容，保存到本机工作区","帮我整理一份简短的今日计划。先询问我的安排，确认内容后保存到工作区。");
     }
-    private void quick(String icon,String title,String description,String prompt) {
-        LinearLayout card=UiKit.row(activity); UiKit.pad(card,16,15,14,15); card.setBackground(UiKit.shape(activity,UiKit.WHITE,UiKit.LINE,18));
-        TextView symbol=UiKit.text(activity,icon,23,UiKit.BLUE); card.addView(symbol,new LinearLayout.LayoutParams(UiKit.dp(activity,36),-2));
+    private void quick(DshIcons.Name icon,String title,String description,String prompt) {
+        LinearLayout card=UiKit.row(activity); UiKit.pad(card,15,12,14,12); card.setMinimumHeight(UiKit.dp(activity,82)); card.setBackground(UiKit.ripple(activity,UiKit.WHITE,UiKit.LINE,16));
+        ImageView symbol=DshIcons.view(activity,icon,UiKit.INK,24); card.addView(symbol,new LinearLayout.LayoutParams(UiKit.dp(activity,36),UiKit.dp(activity,36)));
         LinearLayout labels=UiKit.column(activity); labels.addView(UiKit.bold(activity,title,15,UiKit.INK)); labels.addView(UiKit.text(activity,description,12,UiKit.MUTED)); card.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
-        card.addView(UiKit.text(activity,"↗",18,UiKit.MUTED)); card.setOnClickListener(v->suggest.accept(prompt)); card.setFocusable(true); card.setContentDescription(title+"，"+description);
+        ImageView arrow=DshIcons.view(activity,DshIcons.Name.RIGHT,UiKit.MUTED,20); card.addView(arrow,new LinearLayout.LayoutParams(UiKit.dp(activity,24),UiKit.dp(activity,24)));
+        card.setOnClickListener(v->suggest.accept(prompt)); card.setFocusable(true); card.setContentDescription(title+"，"+description);
         LinearLayout.LayoutParams p=UiKit.matchWrap(); p.bottomMargin=UiKit.dp(activity,10); content.addView(card,p);
     }
     private void bubble(String value,boolean user) {
-        LinearLayout wrapper=UiKit.column(activity); UiKit.pad(wrapper,user?16:2,12,user?16:2,12);
+        LinearLayout wrapper=UiKit.column(activity); UiKit.pad(wrapper,16,12,16,12);
         wrapper.setBackground(UiKit.shape(activity,user?0xffeaf0ff:UiKit.WHITE,user?0:UiKit.LINE,20));
         wrapper.addView(UiKit.bold(activity,user?"你":"DSH",11,user?UiKit.BLUE:UiKit.MUTED)); UiKit.gap(wrapper,5);
         TextView text=UiKit.text(activity,UiKit.visible(value),16,UiKit.INK); text.setTextIsSelectable(true); text.setLineSpacing(UiKit.dp(activity,5),1); wrapper.addView(text);

@@ -1,6 +1,6 @@
 # DSH Mobile · Android AI Agent Runtime
 
-**2.0 移动预览版：** 原生 Android 独立助手，支持本机会话、流式模型对话、手机工具与技能、插件开关和文件工作区。参考官方 DeepSeek Harness 的架构设计，使用独立名称与图标。详见 [安装、使用与架构说明](docs/DSH_MOBILE.md)。
+**2.0 移动预览版：** 原生 Android 独立助手，支持本机会话、流式模型对话、手机工具与技能、插件开关和文件工作区。四个主要页面参照 [DSH Mobile 设计稿](docs/design/dsh-mobile-ui-reference.png) 实现。详见 [安装、使用与架构说明](docs/DSH_MOBILE.md)。
 
 本轮已通过自动化功能测试与构建检查；尚未完成当前 APK 的真机验收。下面的 V1.x 内容属于基础引擎及历史记录。
 

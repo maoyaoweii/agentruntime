@@ -5,6 +5,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Switch;
+import android.widget.Spinner;
+import android.content.Intent;
+import android.text.method.PasswordTransformationMethod;
+import android.view.WindowManager;
 import com.agentruntime.dsh.store.SessionStore;
 import org.json.JSONObject;
 import com.agentruntime.AgentApp;
@@ -47,6 +52,100 @@ public class DshUiTest {
             try(ActivityController<? extends Activity> controller=Robolectric.buildActivity(screen).setup()) { assertNotNull(controller.get().findViewById(android.R.id.content)); }
         }
     }
+    @Test public void rootTabsOpenTheirDestinationsAndHighlightTheCurrentPage() {
+        try(ActivityController<DshActivity> chat=Robolectric.buildActivity(DshActivity.class).setup()) {
+            assertTrue(chat.get().findViewById(R.id.dsh_tab_chat).isSelected());
+            chat.get().findViewById(R.id.dsh_tab_plugins).performClick();
+            Intent next=Shadows.shadowOf(chat.get()).getNextStartedActivity();
+            assertEquals(PluginsActivity.class.getName(),next.getComponent().getClassName());
+            assertFalse(chat.get().isFinishing());
+        }
+        try(ActivityController<PluginsActivity> plugins=Robolectric.buildActivity(PluginsActivity.class).setup()) {
+            assertTrue(plugins.get().findViewById(R.id.dsh_tab_plugins).isSelected());
+            plugins.get().findViewById(R.id.dsh_tab_settings).performClick();
+            Intent next=Shadows.shadowOf(plugins.get()).getNextStartedActivity();
+            assertEquals(DshSettingsActivity.class.getName(),next.getComponent().getClassName());
+            assertTrue(plugins.get().isFinishing());
+        }
+        try(ActivityController<SessionsActivity> sessions=Robolectric.buildActivity(SessionsActivity.class).setup();
+            ActivityController<DshSettingsActivity> settings=Robolectric.buildActivity(DshSettingsActivity.class).setup()) {
+            assertTrue(sessions.get().findViewById(R.id.dsh_tab_sessions).isSelected());
+            assertTrue(settings.get().findViewById(R.id.dsh_tab_settings).isSelected());
+        }
+    }
+    @Test public void pluginSwitchUpdatesTheActualRegistry() {
+        try(ActivityController<PluginsActivity> controller=Robolectric.buildActivity(PluginsActivity.class).setup()) {
+            Switch toggle=(Switch)findDescription(controller.get().getWindow().getDecorView(),"启用本机工作区");
+            assertNotNull(toggle); boolean original=AgentApp.get().dsh().plugins.enabled("workspace");
+            try { toggle.setChecked(!original); assertEquals(!original,AgentApp.get().dsh().plugins.enabled("workspace")); }
+            finally { toggle.setChecked(original); }
+        }
+    }
+    @Test public void revealingTheKeyIsExplicitAndItIsHiddenAgainOnPause() {
+        try(ActivityController<DshSettingsActivity> controller=Robolectric.buildActivity(DshSettingsActivity.class).setup()) {
+            DshSettingsActivity activity=controller.get(); EditText key=activity.findViewById(R.id.dsh_api_key); key.setText("synthetic-test-key");
+            assertFalse(key.isSaveEnabled()); assertTrue(key.getTransformationMethod() instanceof PasswordTransformationMethod);
+            activity.findViewById(R.id.dsh_reveal_key).performClick();
+            assertFalse(key.getTransformationMethod() instanceof PasswordTransformationMethod);
+            assertTrue((activity.getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0);
+            controller.pause(); assertTrue(key.getTransformationMethod() instanceof PasswordTransformationMethod);
+        }
+    }
+    @Test public void rotationDoesNotRestoreAnEnteredKey() {
+        try(ActivityController<DshSettingsActivity> controller=Robolectric.buildActivity(DshSettingsActivity.class).setup()) {
+            DshSettingsActivity activity=controller.get();
+            ((EditText)activity.findViewById(R.id.dsh_api_key)).setText("synthetic-test-key");
+            ((EditText)activity.findViewById(R.id.dsh_model_url)).setText("https://example.org/v1");
+            ((Spinner)activity.findViewById(R.id.dsh_protocol)).setSelection(2);
+            boolean expected=!((Switch)activity.findViewById(R.id.dsh_thinking)).isChecked();
+            ((Switch)activity.findViewById(R.id.dsh_thinking)).setChecked(expected);
+            controller.recreate(); activity=controller.get();
+            assertEquals("",((EditText)activity.findViewById(R.id.dsh_api_key)).getText().toString());
+            assertEquals("https://example.org/v1",((EditText)activity.findViewById(R.id.dsh_model_url)).getText().toString());
+            assertEquals(2,((Spinner)activity.findViewById(R.id.dsh_protocol)).getSelectedItemPosition());
+            assertEquals(expected,((Switch)activity.findViewById(R.id.dsh_thinking)).isChecked());
+        }
+    }
+    @Test public void aTranscriptReadFailureIsVisibleToTheUser() throws Exception {
+        SessionStore store=AgentApp.get().dsh().sessions; String session=store.createSession().id;
+        android.database.sqlite.SQLiteDatabase db=store.getWritableDatabase(); db.execSQL("ALTER TABLE events RENAME TO events_temporarily_unavailable");
+        try {
+            Intent intent=new Intent(RuntimeEnvironment.getApplication(),DshActivity.class).putExtra("session",session);
+            try(ActivityController<DshActivity> controller=Robolectric.buildActivity(DshActivity.class,intent).setup()) {
+                TextView status=controller.get().findViewById(R.id.dsh_status);
+                assertEquals(View.VISIBLE,status.getVisibility()); assertTrue(status.getText().toString().contains("读取会话失败"));
+            }
+        } finally { db.execSQL("ALTER TABLE events_temporarily_unavailable RENAME TO events"); }
+    }
+    @Test @Config(qualifiers="w320dp-h640dp-xhdpi") public void fourPrimaryScreensKeepNavigationUsableOnASmallPhone() {
+        for(Class<? extends Activity> screen:java.util.Arrays.asList(DshActivity.class,SessionsActivity.class,PluginsActivity.class,DshSettingsActivity.class)) {
+            try(ActivityController<? extends Activity> controller=Robolectric.buildActivity(screen).setup()) {
+                Activity activity=controller.get(); View root=((ViewGroup)activity.findViewById(android.R.id.content)).getChildAt(0);
+                int width=UiKit.dp(activity,320),height=UiKit.dp(activity,640);
+                root.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY)); root.layout(0,0,width,height);
+                for(int id:new int[]{R.id.dsh_tab_chat,R.id.dsh_tab_sessions,R.id.dsh_tab_plugins,R.id.dsh_tab_settings}) {
+                    View tab=activity.findViewById(id); assertNotNull(tab); assertTrue(tab.getWidth()>=UiKit.dp(activity,48)); assertTrue(tab.getHeight()>=UiKit.dp(activity,48));
+                    int[] position=new int[2]; tab.getLocationInWindow(position); assertTrue(position[0]>=0&&position[0]+tab.getWidth()<=width); assertTrue(position[1]+tab.getHeight()<=height);
+                }
+            }
+        }
+    }
+    @Test @Config(qualifiers="w891dp-h411dp-land-xxhdpi") public void landscapeKeyboardKeepsTheComposerUsableAndRestoresNavigation() {
+        try(ActivityController<DshActivity> controller=Robolectric.buildActivity(DshActivity.class).setup()) {
+            DshActivity activity=controller.get(); View root=((ViewGroup)activity.findViewById(android.R.id.content)).getChildAt(0);
+            EditText composer=activity.findViewById(R.id.dsh_composer); composer.setText("保持草稿"); composer.requestFocus();
+            layout(root,UiKit.dp(activity,891),UiKit.dp(activity,240)); layout(root,UiKit.dp(activity,891),UiKit.dp(activity,240));
+            assertEquals(View.GONE,activity.findViewById(R.id.dsh_bottom_navigation).getVisibility());
+            View send=activity.findViewById(R.id.dsh_send); int[] location=new int[2]; send.getLocationInWindow(location);
+            assertTrue(location[1]>=0&&location[1]+send.getHeight()<=UiKit.dp(activity,240));
+            root.requestFocus(); layout(root,UiKit.dp(activity,891),UiKit.dp(activity,411));
+            assertEquals(View.VISIBLE,activity.findViewById(R.id.dsh_bottom_navigation).getVisibility());
+            assertEquals("保持草稿",composer.getText().toString());
+        }
+    }
+    private static void layout(View root,int width,int height) {
+        root.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY)); root.layout(0,0,width,height);
+    }
     @Test public void reusedCallIdsInLaterTurnsCannotReplaceEarlierToolDetails() throws Exception {
         SessionStore store=AgentApp.get().dsh().sessions; String session=store.createSession().id;
         for(String value:new String[]{"first-result","second-result"}) {
@@ -75,6 +174,11 @@ public class DshUiTest {
     private static TextView findText(View view,String text) {
         if(view instanceof TextView&&((TextView)view).getText().toString().equals(text)) return (TextView)view;
         if(view instanceof ViewGroup) for(int i=0;i<((ViewGroup)view).getChildCount();i++) { TextView found=findText(((ViewGroup)view).getChildAt(i),text); if(found!=null) return found; }
+        return null;
+    }
+    private static View findDescription(View view,String description) {
+        if(description.contentEquals(view.getContentDescription()==null?"":view.getContentDescription())) return view;
+        if(view instanceof ViewGroup) for(int i=0;i<((ViewGroup)view).getChildCount();i++) { View found=findDescription(((ViewGroup)view).getChildAt(i),description); if(found!=null) return found; }
         return null;
     }
     private static String allText(View view) {
