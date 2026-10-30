@@ -32,6 +32,9 @@ public final class DshRuntime {
             +"Conversation context may contain only the latest whole turns. If earlier context is missing, ask instead of guessing. "
             +"A RESULT_UNAVAILABLE may represent an action that already took effect; inspect current state before proposing a retry. "
             +"Write generated files only through workspace tools. Do not place API keys in files or replies.";
+    /** 单轮最多几次模型往返 / 几次工具调用。 */
+    private static final int MAX_STEPS=12;
+    private static final int MAX_TOOLS=18;
     private final SessionStore store;
     private final ModelTransport model;
     public DshRuntime(SessionStore store,ModelTransport model) { this.store=store; this.model=model; }
@@ -52,7 +55,10 @@ public final class DshRuntime {
             for(int i=0;i<history.length();i++) messages.put(history.getJSONObject(i));
             messages.put(new JSONObject().put("role","user").put("content",text));
             JSONArray schemas=plugins.schemas(); Set<String> ids=new HashSet<>(); int toolCount=0;
-            for(int step=0;step<8;step++) {
+            // 真实应用的一条链路（打开微信 → 读屏 → 点搜索 → 输入 → 读屏 → 点联系人 → 输入 → 发送 → 复核）
+            // 就要 8~10 次工具调用。原来的 8 步/12 次会把任务腰斩在半路，这里放宽到 12 步/18 次，
+            // 仍有 3 分钟总时限兜底，不至于无限跑。
+            for(int step=0;step<MAX_STEPS;step++) {
                 cancellation.check(); listener.status(step==0?"正在连接模型…":"正在整理工具结果…");
                 if(messages.toString().length()>256000) throw new java.io.IOException("CONTEXT_LIMIT");
                 partial.setLength(0);
@@ -78,13 +84,13 @@ public final class DshRuntime {
                     listener.status("正在调用 · "+name);
                     store.append(session,turn,"tool_started",new JSONObject().put("id",id).put("name",name).put("arguments",args));
                     listener.settled();
-                    JSONObject result=++toolCount>12?PluginRegistry.failure("TOOL_LIMIT"):plugins.invoke(name,args,cancellation);
+                    JSONObject result=++toolCount>MAX_TOOLS?PluginRegistry.failure("TOOL_LIMIT"):plugins.invoke(name,args,cancellation);
                     // A successful side effect must remain visible even if cancellation arrives just afterwards.
                     JSONObject message=new JSONObject().put("role","tool").put("tool_call_id",id).put("content",result.toString());
                     store.append(session,turn,"tool_result",message); messages.put(message); listener.settled();
                     cancellation.check();
                 }
-                if(toolCount>12) throw new java.io.IOException("TOOL_LIMIT");
+                if(toolCount>MAX_TOOLS) throw new java.io.IOException("TOOL_LIMIT");
             }
             throw new java.io.IOException("MODEL_STEP_LIMIT");
         } catch(Exception e) {
