@@ -1,0 +1,22 @@
+{
+  "skill_id": "sys.force_stop",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["package"],
+  "risk": "HIGH",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "结束一个应用：跳到它的系统详情页点「强行停止」并确认。用于「把后台的B站关掉」这类请求；会丢失该应用未保存的状态，最后一步需要你确认。只想回桌面用 sys.press_key(home)，不要用本技能",
+  "postconditions": [],
+  "steps": [
+    {"action": "open_settings_page", "params": {"page": "app_details", "package": "${package}"}, "timeout_ms": 15000},
+    {"action": "wait_ms", "params": {"ms": 1200}, "timeout_ms": 4000},
+    {"action": "tap_text",
+     "params": {"text": "强行停止|Force stop|强制停止", "scroll": true, "max_scrolls": 1, "settle_ms": 800},
+     "timeout_ms": 20000},
+    {"action": "wait_ms", "params": {"ms": 900}, "timeout_ms": 4000},
+    {"action": "tap_text",
+     "params": {"text": "确定|确认|OK|强行停止", "scroll": false, "max_scrolls": 0, "settle_ms": 800},
+     "timeout_ms": 15000, "risk": "HIGH", "requires_confirmation": true}
+  ]
+}

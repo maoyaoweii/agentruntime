@@ -300,7 +300,29 @@ public final class SystemBridge {
     }
 
     public ExecResult openSettingsPage(String page) {
+        return openSettingsPage(page, null);
+    }
+
+    /**
+     * 打开系统设置页；{@code app_details} 需要配合包名，跳到该应用的详情页
+     * （"强行停止""权限""存储"都在这一页，是真实应用管理的唯一入口）。
+     */
+    public ExecResult openSettingsPage(String page, String packageName) {
         long start = System.currentTimeMillis();
+        if ("app_details".equalsIgnoreCase(page == null ? "" : page.trim())) {
+            String pkg = packageName == null ? "" : packageName.trim();
+            if (!pkg.matches("[A-Za-z][A-Za-z0-9_.]{1,150}")) {
+                return ExecResult.reject("BAD_PACKAGE", "需要合法的应用包名，例如 com.tencent.mm", 0);
+            }
+            try {
+                Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:" + pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(i);
+                return ExecResult.ok("SETTINGS_OPENED", "app_details:" + pkg, 0, elapsed(start));
+            } catch (Throwable t) {
+                return ExecResult.fail("SETTINGS_OPEN_FAILED", String.valueOf(t.getMessage()), 0, elapsed(start));
+            }
+        }
         String canonical = canonicalPage(page);
         String action = null;
         if (canonical != null) {
@@ -325,10 +347,9 @@ public final class SystemBridge {
     }
 
     public static String allowedPages() {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder("app_details");
         for (String[] p : SETTINGS_PAGES) {
-            if (sb.length() > 0) sb.append('|');
-            sb.append(p[0]);
+            sb.append('|').append(p[0]);
         }
         return sb.toString();
     }

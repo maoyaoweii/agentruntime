@@ -23,6 +23,7 @@ import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -133,6 +134,23 @@ public class ReadScreenToolResultTest {
 
         // 真机上的"滑动已经生效"其实滑的是自己的聊天记录，这里必须拦住。
         assertEquals("SELF_WINDOW_FOCUSED", result.code);
+    }
+
+    @Test
+    public void tapTextMatchesAnyOfSeveralLabels() {
+        StateEngine state = new StateEngine();
+        UiNode forceStop = new UiNode("n9", "android.widget.Button", "Force stop", null, null,
+                true, true, true, false, false, false, false, 40, 1200, 600, 1280,
+                Collections.emptyList());
+        UiNode root = new UiNode("n8", "android.widget.FrameLayout", null, null, null,
+                false, true, true, false, false, false, false, 0, 0, 1080, 2400,
+                Collections.singletonList(forceStop));
+        state.rebuildSnapshot("com.android.settings", "应用信息", root, null, "test_fixture");
+
+        UiNode hit = ActionExecutor.pickByText(state.current(), "强行停止|Force stop|强制停止");
+
+        assertNotNull(hit);
+        assertEquals("Force stop", hit.text);
     }
 
     @Test

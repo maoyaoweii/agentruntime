@@ -1,0 +1,15 @@
+{
+  "skill_id": "sys.open_app_info",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["package"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "打开指定应用的系统详情页（权限、存储、通知、强行停止都在这一页）。参数是包名，例如微信 com.tencent.mm、B站 tv.danmaku.bili；不确定包名时先用 device_status 或 sys.read_screen 确认",
+  "postconditions": [],
+  "steps": [
+    {"action": "open_settings_page", "params": {"page": "app_details", "package": "${package}"}, "timeout_ms": 15000},
+    {"action": "wait_ms", "params": {"ms": 1200}, "timeout_ms": 4000}
+  ]
+}

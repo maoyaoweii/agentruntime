@@ -454,7 +454,7 @@ public final class ActionExecutor {
                 com.agentruntime.device.SystemBridge sys = systemBridge();
                 result = sys == null
                         ? ExecResult.reject("CAPABILITY_MISSING", "system bridge not attached", epoch)
-                        : sys.openSettingsPage(spec.param("page"));
+                        : sys.openSettingsPage(spec.param("page"), spec.param("package"));
                 break;
             }
             case LIST_APPS: {
@@ -1077,8 +1077,20 @@ public final class ActionExecutor {
     }
 
     /** 在整棵树里挑最像用户想点的那个节点（不依赖坐标，也不做模糊的语义猜测）。 */
-    private static UiNode pickByText(WorldState state, String query) {
+    /**
+     * 按可见文字挑节点，支持 {@code "A|B"} 多候选（中文界面/英文界面的同一入口）。
+     *
+     * <p>系统设置这类页面在不同 ROM 上叫法不同（强行停止 / Force stop），
+     * 只认一个写法等于把技能绑死在一种语言上。
+     */
+    static UiNode pickByText(WorldState state, String query) {
         if (state == null || state.root == null) return null;
+        List<String> needles = new ArrayList<>();
+        if (query != null) for (String raw : query.split("\\|")) {
+            String needle = raw.trim();
+            if (!needle.isEmpty()) needles.add(needle);
+        }
+        if (needles.isEmpty()) return null;
         List<UiNode> clickables = new ArrayList<>();
         UiNode exactClickable = null;
         UiNode exactAny = null;
@@ -1087,8 +1099,11 @@ public final class ActionExecutor {
         for (UiNode n : state.root.flat()) {
             if (!n.visible) continue;
             if (n.clickable) clickables.add(n);
-            boolean exact = n.matchesText(query);
-            boolean contains = n.containsText(query);
+            boolean exact = false, contains = false;
+            for (String needle : needles) {
+                if (n.matchesText(needle)) { exact = true; break; }
+                if (n.containsText(needle)) contains = true;
+            }
             if (!exact && !contains) continue;
             if (exact && n.clickable) {
                 if (exactClickable == null) exactClickable = n;

@@ -6,7 +6,7 @@
   "risk": "LOW",
   "confirmation": "never",
   "max_retries": 1,
-  "recovery": "按当前界面可见文字点击；首屏看不到就按 direction 滚动最多 max_scrolls 次再找。用于真实应用中藏在抽屉/列表下方的入口（实测 NewPipe 的「设置」）",
+  "recovery": "按当前界面可见文字点击；首屏看不到就按 direction 滚动最多 max_scrolls 次再找。text 支持多个候选，用 | 分隔（例如「强行停止|Force stop」），适配中英文界面。用于真实应用中藏在抽屉/列表下方的入口",
   "postconditions": [],
   "steps": [
     {"action": "tap_text",

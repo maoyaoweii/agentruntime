@@ -6,6 +6,7 @@
   "risk": "LOW",
   "confirmation": "never",
   "max_retries": 0,
+  "recovery": "ACTION_CLOSE_SYSTEM_DIALOGS 在 Android 12+ 已是受保护广播，普通应用发出去不会生效。要关掉弹窗、键盘或抽屉请用 sys.press_key(back)；本技能只为兼容旧系统保留",
   "postconditions": [],
   "steps": [
     {"action": "close_system_dialogs", "params": {}, "timeout_ms": 5000}
