@@ -38,10 +38,24 @@ public class SessionStoreTest {
         try(SessionStore store=new SessionStore(context)) {
             store.recoverInterrupted();
             assertEquals("interrupted",store.turnState(turn));
-            assertEquals(0,store.history(session,10000).length());
+            assertEquals(2,store.history(session,10000).length());
+            assertTrue(store.history(session,10000).getJSONObject(1).getString("content").contains("Do not resume"));
             int count=store.events(session).size(); store.recoverInterrupted();
             assertEquals(count,store.events(session).size());
             store.delete(session); assertNull(store.session(session));
+        }
+    }
+
+    @Test public void interruptedToolCallsAreClosedWithoutClaimingTheyDidNotRun() throws Exception {
+        try(SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
+            String session=store.createSession().id,turn=store.beginTurn(session,"write fixture","tools","fixture");
+            store.append(session,turn,"assistant_message",new JSONObject("{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"pending\",\"type\":\"function\",\"function\":{\"name\":\"workspace_write\",\"arguments\":\"{}\"}}]}"));
+            store.recoverInterrupted();
+            org.json.JSONArray history=store.history(session,10000);
+            assertEquals(4,history.length());
+            assertEquals("pending",history.getJSONObject(2).getString("tool_call_id"));
+            assertTrue(history.getJSONObject(2).getString("content").contains("may have taken effect"));
+            int count=store.events(session).size(); store.recoverInterrupted(); assertEquals(count,store.events(session).size());
         }
     }
 

@@ -92,6 +92,7 @@ public final class SessionStore extends SQLiteOpenHelper {
 
     public synchronized String beginTurn(String sessionId,String text,String mode,String model) throws JSONException {
         if(session(sessionId)==null) throw new IllegalArgumentException("Session not found");
+        if(!"chat".equals(mode)&&!"tools".equals(mode)) throw new IllegalArgumentException("Invalid mode");
         if(text==null||text.trim().isEmpty()||text.length()>MAX_INPUT) throw new IllegalArgumentException("Message length must be 1..16000");
         String turn=UUID.randomUUID().toString(); SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
@@ -126,6 +127,7 @@ public final class SessionStore extends SQLiteOpenHelper {
         if(!java.util.Arrays.asList("completed","failed","cancelled","interrupted").contains(state)) throw new IllegalArgumentException("Invalid turn state");
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
         try {
+            if(!"completed".equals(state)) closeInterruptedProtocol(db,session,turn,state,code);
             appendInternal(db,session,turn,"turn_finished",new JSONObject().put("state",state).put("code",code));
             ContentValues values=new ContentValues(); values.put("state",state);
             db.update("turns",values,"id=? AND session_id=?",new String[]{turn,session});
@@ -133,6 +135,25 @@ public final class SessionStore extends SQLiteOpenHelper {
             db.update("sessions",updated,"id=?",new String[]{session});
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
+    }
+
+    /** Closing protocol gaps records uncertainty; it never repeats an admitted action. */
+    private void closeInterruptedProtocol(SQLiteDatabase db,String session,String turn,String state,String code) throws JSONException {
+        java.util.LinkedHashSet<String> pending=new java.util.LinkedHashSet<>();
+        try(Cursor cursor=db.rawQuery("SELECT type,payload FROM events WHERE session_id=? AND turn_id=? ORDER BY seq",new String[]{session,turn})) {
+            while(cursor.moveToNext()) {
+                JSONObject message=new JSONObject(cursor.getString(1));
+                if("assistant_message".equals(cursor.getString(0))) {
+                    JSONArray calls=message.optJSONArray("tool_calls");
+                    if(calls!=null) for(int i=0;i<calls.length();i++) pending.add(calls.getJSONObject(i).getString("id"));
+                } else if("tool_result".equals(cursor.getString(0))) pending.remove(message.optString("tool_call_id"));
+            }
+        }
+        for(String id:pending) appendInternal(db,session,turn,"tool_result",new JSONObject().put("role","tool").put("tool_call_id",id)
+                .put("content",new JSONObject().put("ok",false).put("code","RESULT_UNAVAILABLE")
+                        .put("message","Execution was interrupted. The action may have taken effect; verify the current state before any retry.").toString()));
+        appendInternal(db,session,turn,"assistant_message",new JSONObject().put("role","assistant").put("reasoning_content","")
+                .put("content","[DSH Runtime] This turn ended: "+state+" ("+code+"). Completed tool results remain valid. Do not resume or repeat this task without a new user request."));
     }
 
     public synchronized void recoverInterrupted() throws JSONException {
@@ -164,11 +185,11 @@ public final class SessionStore extends SQLiteOpenHelper {
         Collections.reverse(result); return result;
     }
 
-    /** Whole turns are selected; cancelled/incomplete tool sequences never enter a later request. */
+    /** Only whole, settled turns enter later requests; interrupted tool protocols are closed above. */
     public synchronized JSONArray history(String session,int maxCharacters) throws JSONException {
         LinkedHashMap<String,List<JSONObject>> byTurn=new LinkedHashMap<>();
         List<String> ids=new ArrayList<>();
-        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT id FROM turns WHERE session_id=? AND state='completed' ORDER BY started DESC,rowid DESC LIMIT 12",new String[]{session})) {
+        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT id FROM turns WHERE session_id=? AND state!='running' ORDER BY started DESC,rowid DESC LIMIT 12",new String[]{session})) {
             while(cursor.moveToNext()) ids.add(cursor.getString(0));
         }
         for(String turn:ids) {

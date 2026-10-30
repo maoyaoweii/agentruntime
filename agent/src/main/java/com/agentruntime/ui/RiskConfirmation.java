@@ -32,6 +32,7 @@ public final class RiskConfirmation implements Application.ActivityLifecycleCall
         final CompletableFuture<Boolean> answer = new CompletableFuture<>();
         AlertDialog dialog;
         Activity owner;
+        java.util.concurrent.atomic.AtomicBoolean token;
     }
 
     public RiskConfirmation(Context context) {
@@ -40,12 +41,18 @@ public final class RiskConfirmation implements Application.ActivityLifecycleCall
 
     @Override
     public boolean requestConfirmation(String actionId, String summary) {
+        return requestConfirmation(actionId,summary,null);
+    }
+
+    public boolean requestConfirmation(String actionId,String summary,java.util.concurrent.atomic.AtomicBoolean token) {
+        if(token!=null&&token.get()) return false;
         if (Looper.myLooper() == Looper.getMainLooper()) return false;
         Activity activity = foreground.get();
         if (activity == null && !Settings.canDrawOverlays(application)) return false;
         Request request = new Request();
+        request.token=token;
         main.post(() -> {
-            if (request.answer.isDone() || (activity != null && (foreground.get() != activity
+            if (request.answer.isDone() || (token!=null&&token.get()) || (activity != null && (foreground.get() != activity
                     || activity.isFinishing() || activity.isDestroyed()))
                     || (activity == null && !Settings.canDrawOverlays(application))) {
                 request.answer.complete(false);
@@ -89,6 +96,10 @@ public final class RiskConfirmation implements Application.ActivityLifecycleCall
 
     public void cancelPending() {
         main.post(this::dismissPending);
+    }
+
+    public void cancelPending(java.util.concurrent.atomic.AtomicBoolean token) {
+        main.post(() -> { if(pending!=null&&pending.token==token) dismissPending(); });
     }
 
     private void dismissPending() {

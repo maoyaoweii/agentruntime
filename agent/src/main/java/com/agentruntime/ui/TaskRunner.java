@@ -30,10 +30,12 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class TaskRunner {
 
     private static final AtomicReference<Execution> ACTIVE = new AtomicReference<>();
+    private static final Object ADMISSION = new Object();
 
     private static final class Execution {
-        final AtomicBoolean cancellation = new AtomicBoolean(false);
+        final AtomicBoolean cancellation;
         final Thread thread = Thread.currentThread();
+        Execution(AtomicBoolean cancellation) { this.cancellation=cancellation==null?new AtomicBoolean(false):cancellation; }
     }
 
     private interface TaskOperation {
@@ -85,7 +87,14 @@ public final class TaskRunner {
     }
 
     public static void cancel() {
+        cancel(null);
+    }
+
+    /** A mobile assistant may only cancel the nested skill that owns its token. */
+    public static void cancel(AtomicBoolean expectedOwner) {
+        synchronized(ADMISSION) {
         Execution execution = ACTIVE.get();
+        if(expectedOwner!=null&&(execution==null||execution.cancellation!=expectedOwner)) return;
         if (execution != null) {
             execution.cancellation.set(true);
             execution.thread.interrupt();
@@ -96,14 +105,19 @@ public final class TaskRunner {
             app.modelRouter().cloud().cancel();
             app.confirmations().cancelPending();
         }
+        }
     }
 
     private static AgentRuntime.TaskResult runExclusive(boolean autoConfirm, TaskOperation operation) throws Exception {
-        Execution execution = new Execution();
+        return runExclusive(autoConfirm,operation,null);
+    }
+
+    private static AgentRuntime.TaskResult runExclusive(boolean autoConfirm, TaskOperation operation,AtomicBoolean owner) throws Exception {
+        Execution execution = new Execution(owner);
         AtomicBoolean cancellation = execution.cancellation;
-        if (!ACTIVE.compareAndSet(null, execution)) {
+        synchronized(ADMISSION) { if (!ACTIVE.compareAndSet(null, execution)) {
             throw new IllegalStateException("已有任务正在规划或执行，请先停止或等待完成");
-        }
+        } }
         AgentApp app = AgentApp.get();
         try {
             app.riskGate().setTestModeAutoConfirm(BuildConfig.DEBUG && autoConfirm);
@@ -117,7 +131,7 @@ public final class TaskRunner {
             throw e;
         } finally {
             if (app != null) app.riskGate().setTestModeAutoConfirm(false);
-            ACTIVE.compareAndSet(execution, null);
+            synchronized(ADMISSION) { ACTIVE.compareAndSet(execution, null); }
         }
     }
 
@@ -136,6 +150,11 @@ public final class TaskRunner {
     /** 直接按技能 ID 执行内置技能（快捷面板用，跳过自然语言规划）。 */
     public static AgentRuntime.TaskResult runSkill(String skillId, JSONObject args,
                                                    boolean autoConfirm) throws Exception {
+        return runSkill(skillId,args,autoConfirm,null);
+    }
+
+    public static AgentRuntime.TaskResult runSkill(String skillId,JSONObject args,
+                                                   boolean autoConfirm,AtomicBoolean owner) throws Exception {
         AgentApp app = AgentApp.get();
         JSONObject skillArgs = args == null ? new JSONObject() : args;
         List<ActionSpec> declaredActions = app.skillEngine().resolve(skillId, skillArgs);
@@ -163,7 +182,8 @@ public final class TaskRunner {
         limits.put("timeout_seconds", 300);
         taskJson.put("limits", limits);
 
-        return runTaskJson(taskJson.toString(), autoConfirm, true);
+        return runExclusive(autoConfirm,cancellation -> execute(DslParser.parseTask(taskJson.toString()),
+                autoConfirm,true,cancellation),owner);
     }
 
     public static File writeResult(com.agentruntime.AgentApp app, JSONObject result) throws IOException {
