@@ -15,10 +15,13 @@ public interface MobilePlugin {
     final class Tool {
         public final String name,description;
         public final JSONObject parameters;
-        public final boolean confirm;
+        public final boolean confirm,sideEffect;
         public final Handler handler;
         public Tool(String name,String description,JSONObject parameters,boolean confirm,Handler handler) {
-            this.name=name; this.description=description; this.parameters=parameters; this.confirm=confirm; this.handler=handler;
+            this(name,description,parameters,confirm,confirm,handler);
+        }
+        public Tool(String name,String description,JSONObject parameters,boolean confirm,boolean sideEffect,Handler handler) {
+            this.name=name; this.description=description; this.parameters=parameters; this.confirm=confirm; this.sideEffect=sideEffect; this.handler=handler;
         }
     }
 }

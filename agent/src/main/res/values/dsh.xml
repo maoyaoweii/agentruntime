@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="dsh_composer" type="id" />
+    <item name="dsh_send" type="id" />
+    <style name="DshBaseTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#4D6BFE</item>
+        <item name="android:colorPrimary">#4D6BFE</item>
+        <item name="android:windowBackground">#F7F8FC</item>
+        <item name="android:statusBarColor">#F7F8FC</item>
+        <item name="android:navigationBarColor">#202538</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="DshTheme" parent="DshBaseTheme" />
+</resources>

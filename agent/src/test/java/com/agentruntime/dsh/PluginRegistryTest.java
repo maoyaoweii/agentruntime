@@ -71,4 +71,11 @@ public class PluginRegistryTest {
         assertFalse(workspace.write("large.txt","x".repeat(16385),new Cancellation(5000)).getBoolean("ok"));
         assertEquals(1,workspace.list().getJSONArray("data").length());
     }
+    @Test public void revokedObservationIsDiscardedBeforeItCanEnterHistory() throws Exception {
+        PluginRegistry registry=registry((s,t)->true); Cancellation token=new Cancellation(5000);
+        registry.register(plugin("fixture","read_private",false,(a,t)->{ registry.setEnabled("fixture",false); return PluginRegistry.success("READ","late-private-data"); }));
+        try { assertThrows(java.io.InterruptedIOException.class,()->registry.snapshot(true).invoke("read_private",new JSONObject(),token)); }
+        finally { Thread.interrupted(); }
+        assertEquals("PLUGIN_DISABLED",token.reason());
+    }
 }

@@ -31,10 +31,15 @@ public final class DshRuntime {
 
     public String run(String session,String text,boolean toolsMode,ProviderConfig.Snapshot provider,
                       PluginRegistry.Snapshot plugins,Cancellation cancellation,Listener listener) throws Exception {
-        cancellation.bind(); cancellation.check();
         String turn=store.beginTurn(session,text,toolsMode?"tools":"chat",provider.model);
+        return runAdmitted(session,turn,text,provider,plugins,cancellation,listener);
+    }
+
+    public String runAdmitted(String session,String turn,String text,ProviderConfig.Snapshot provider,
+                             PluginRegistry.Snapshot plugins,Cancellation cancellation,Listener listener) throws Exception {
         StringBuilder partial=new StringBuilder();
         try {
+            cancellation.bind(); cancellation.check();
             JSONArray messages=new JSONArray().put(new JSONObject().put("role","system").put("content",SYSTEM));
             JSONArray history=store.history(session,96000);
             for(int i=0;i<history.length();i++) messages.put(history.getJSONObject(i));

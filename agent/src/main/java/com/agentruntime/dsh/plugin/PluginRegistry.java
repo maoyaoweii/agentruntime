@@ -44,7 +44,9 @@ public final class PluginRegistry {
     }
     private static final class Entry {
         final String plugin; final MobilePlugin.Tool tool;
-        Entry(String plugin,MobilePlugin.Tool tool) { this.plugin=plugin; this.tool=tool; }
+        Entry(String plugin,MobilePlugin.Tool tool) throws Exception {
+            this.plugin=plugin; this.tool=new MobilePlugin.Tool(tool.name,tool.description,new JSONObject(tool.parameters.toString()),tool.confirm,tool.sideEffect,tool.handler);
+        }
     }
     private static final class Invocation {
         final String plugin; final Cancellation token;
@@ -82,6 +84,9 @@ public final class PluginRegistry {
             try { result=entry.tool.handler.execute(new JSONObject(arguments.toString()),cancellation); }
             catch(java.io.InterruptedIOException e) { throw e; }
             catch(Exception e) { return failure("TOOL_FAILED"); }
+            // Discard observations obtained after revocation. Side effects keep their outcome so
+            // interruption never turns a completed write/action into an implied safe-to-repeat failure.
+            if(!entry.tool.sideEffect) { cancellation.check(); if(!enabled(entry.plugin)) return failure("PLUGIN_DISABLED"); }
             if(result==null) return failure("TOOL_FAILED");
             if(result.toString().length()>32768) return new JSONObject().put("ok",result.optBoolean("ok",false))
                     .put("code",result.optString("code","RESULT_TOO_LARGE")).put("data_omitted",true)

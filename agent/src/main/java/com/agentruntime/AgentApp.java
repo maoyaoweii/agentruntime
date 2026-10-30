@@ -30,6 +30,15 @@ import org.json.JSONObject;
 public final class AgentApp extends Application {
 
     private static AgentApp instance;
+    private com.agentruntime.dsh.DshGraph dsh;
+
+    public synchronized com.agentruntime.dsh.DshGraph dsh() {
+        if(dsh==null) {
+            try { dsh=new com.agentruntime.dsh.DshGraph(this); }
+            catch(Exception e) { throw new IllegalStateException("DSH 本机数据暂时不可用",e); }
+        }
+        return dsh;
+    }
 
     private StateEngine stateEngine;
     private AuditLogger auditLogger;

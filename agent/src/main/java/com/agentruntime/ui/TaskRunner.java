@@ -183,7 +183,7 @@ public final class TaskRunner {
         taskJson.put("limits", limits);
 
         return runExclusive(autoConfirm,cancellation -> execute(DslParser.parseTask(taskJson.toString()),
-                autoConfirm,true,cancellation),owner);
+                autoConfirm,owner==null,cancellation),owner);
     }
 
     public static File writeResult(com.agentruntime.AgentApp app, JSONObject result) throws IOException {

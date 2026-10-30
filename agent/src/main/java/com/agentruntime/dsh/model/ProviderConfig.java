@@ -10,6 +10,7 @@ public final class ProviderConfig {
     public static final String DEFAULT_MODEL="deepseek-flash";
     private final SharedPreferences preferences;
     private final CredentialVault vault;
+    private long editRevision;
 
     public static final class Snapshot {
         public final String endpoint,model,apiKey;
@@ -30,10 +31,15 @@ public final class ProviderConfig {
     public String model() { return preferences.getString("model",DEFAULT_MODEL); }
     public boolean thinking() { return preferences.getBoolean("thinking",false); }
     public boolean configured() { return vault.hasKey(); }
-    public Snapshot snapshot() throws Exception { return new Snapshot(url(),model(),vault.load(),thinking()); }
-    public void clearKey() { vault.clear(); }
+    public synchronized Snapshot snapshot() throws Exception { return new Snapshot(url(),model(),vault.load(),thinking()); }
+    public synchronized long reserveEdit() { return ++editRevision; }
+    public synchronized void clearKey() { ++editRevision; vault.clear(); }
 
     public synchronized void save(String url,String model,String enteredKey,boolean thinking) throws Exception {
+        save(url,model,enteredKey,thinking,reserveEdit());
+    }
+    public synchronized void save(String url,String model,String enteredKey,boolean thinking,long revision) throws Exception {
+        if(revision!=editRevision) throw new IllegalStateException("设置已被更新，请重新保存");
         String key=enteredKey==null||enteredKey.trim().isEmpty()?vault.load():enteredKey;
         new Snapshot(url,model,key,thinking);
         if(configured()&&(enteredKey==null||enteredKey.trim().isEmpty())

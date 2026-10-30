@@ -25,7 +25,7 @@ public final class PhonePlugins {
                         }),
                 new MobilePlugin.Tool("run_skill","执行已登记手机技能。禁止编造参数；高风险由用户确认。返回执行状态与审计摘要，不保证返回文件正文。",
                         PluginRegistry.schema(new JSONObject().put("skill_id",PluginRegistry.field("string","list_skills 返回的技能 ID"))
-                                .put("args",PluginRegistry.field("object","该技能的参数对象")),"skill_id","args"),false,(args,token)-> {
+                                .put("args",PluginRegistry.field("object","该技能的参数对象")),"skill_id","args"),false,true,(args,token)-> {
                             token.check(); String skill=args.getString("skill_id");
                             if(!app.skillEngine().hasSkill(skill)) return PluginRegistry.failure("UNKNOWN_SKILL");
                             AgentRuntime.TaskResult result=TaskRunner.runSkill(skill,args.getJSONObject("args"),false,token.flag);

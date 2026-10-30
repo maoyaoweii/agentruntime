@@ -36,6 +36,17 @@ public class ProviderProtocolTest {
         assertEquals("http://127.0.0.1:3080/v1/chat/completions",ProviderConfig.endpoint("http://127.0.0.1:3080/v1/"));
     }
 
+    @Test public void aDelayedSaveCannotUndoALaterClearAfterActivityRecreation() throws Exception {
+        Context context=RuntimeEnvironment.getApplication();
+        CredentialVault vault=new CredentialVault(context.getSharedPreferences("edit_revision",0),()->new SecretKeySpec(new byte[32],"AES"));
+        ProviderConfig provider=new ProviderConfig(context,vault);
+        provider.save("https://api.deepseek.com","fixture","synthetic-key",false);
+        long delayedEdit=provider.reserveEdit();
+        provider.clearKey();
+        assertThrows(IllegalStateException.class,()->provider.save("https://api.deepseek.com","fixture","stale-key",false,delayedEdit));
+        assertFalse(provider.configured());
+    }
+
     @Test public void preservesReasoningAndRejectsTruncatedOrRepeatedToolCalls() throws Exception {
         JSONObject call=new JSONObject().put("id","call_1").put("function",new JSONObject().put("name","device_status").put("arguments","{}"));
         JSONObject message=new JSONObject().put("content","").put("reasoning_content","provider-reasoning-fixture")

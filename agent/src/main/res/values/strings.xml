@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AgentRuntime</string>
-    <string name="a11y_service_label">AgentRuntime 辅助服务</string>
+    <string name="app_name">DSH Mobile</string>
+    <string name="a11y_service_label">DSH Mobile 辅助服务</string>
     <string name="a11y_service_description">用于读取界面结构并按受控任务计划执行点击、输入等操作。仅在任务执行期间使用，数据按最小化原则处理。</string>
 
     <string name="title_settings">设置</string>
