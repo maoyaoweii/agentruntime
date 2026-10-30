@@ -10,7 +10,15 @@ import java.util.Set;
 public final class ChatProtocol {
     private ChatProtocol() { }
     public static JSONObject request(ProviderConfig.Snapshot config,JSONArray messages,JSONArray tools) throws Exception {
-        JSONObject body=new JSONObject().put("model",config.model).put("messages",messages)
+        JSONArray outgoing=new JSONArray();
+        for(int i=0;i<messages.length();i++) {
+            JSONObject message=new JSONObject(messages.getJSONObject(i).toString());
+            if(config.deepSeek()&&"assistant".equals(message.optString("role"))) {
+                if(!message.has("reasoning_content")) message.put("reasoning_content","");
+            } else if(!config.deepSeek()) message.remove("reasoning_content");
+            outgoing.put(message);
+        }
+        JSONObject body=new JSONObject().put("model",config.model).put("messages",outgoing)
                 .put("stream",true).put("max_tokens",8192);
         if(tools.length()>0) body.put("tools",tools).put("tool_choice","auto");
         if(config.deepSeek()) body.put("thinking",new JSONObject().put("type",config.thinking?"enabled":"disabled"));

@@ -30,7 +30,7 @@ public class ChatHttpIntegrationTest {
         try(FixtureServer server=new FixtureServer(Arrays.asList(first,second,second)); SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
             PluginRegistry registry=new PluginRegistry(RuntimeEnvironment.getApplication().getSharedPreferences("http_plugins",0),(summary,token)->summary.contains("你好，手机 DSH 👋"));
             Workspace workspace=new Workspace(new File(RuntimeEnvironment.getApplication().getFilesDir(),"http-workspace")); registry.register(workspace);
-            ProviderConfig.Snapshot provider=new ProviderConfig.Snapshot(server.url(),"fixture","synthetic-http-key",false);
+            ProviderConfig.Snapshot provider=new ProviderConfig.Snapshot(server.url(),"fixture","synthetic-http-key",false,1);
             DshRuntime runtime=new DshRuntime(store,new ChatClient()); String session=store.createSession().id;
             DshRuntime.Listener quiet=new DshRuntime.Listener(){public void status(String s){} public void delta(String s){} public void settled(){}};
             String turn=runtime.run(session,"保存测试文字",true,provider,registry.snapshot(true),new Cancellation(10000),quiet);

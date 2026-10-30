@@ -15,6 +15,7 @@ public final class DshSettingsActivity extends Activity {
     private DshGraph graph;
     private EditText url,model,key;
     private Switch thinking;
+    private Spinner protocol;
     private TextView saved;
     private Button save,test,clear;
     private Cancellation check;
@@ -25,10 +26,12 @@ public final class DshSettingsActivity extends Activity {
         card.addView(UiKit.text(this,"默认连接 DeepSeek，也支持 Chat Completions 兼容接口。",13,UiKit.MUTED)); UiKit.gap(card,22);
         url=UiKit.input(this,"https://api.deepseek.com",false); url.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI); url.setText(graph.provider.url()); UiKit.field(card,"服务地址",url);
         model=UiKit.input(this,"deepseek-flash",false); model.setText(graph.provider.model()); UiKit.field(card,"模型名称",model);
+        protocol=new Spinner(this); protocol.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"自动识别（推荐）","DeepSeek（含代理服务）","OpenAI 兼容"}));
+        protocol.setSelection(graph.provider.protocol()); protocol.setMinimumHeight(UiKit.dp(this,48)); UiKit.field(card,"接口协议",protocol);
         key=UiKit.input(this,graph.provider.configured()?"已安全保存；留空继续使用":"输入 API Key",false); key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         key.setSaveEnabled(false); key.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS); UiKit.field(card,"API Key",key);
         thinking=new Switch(this); thinking.setText("DeepSeek 深度思考"); thinking.setTextColor(UiKit.INK); thinking.setTextSize(14); thinking.setChecked(graph.provider.thinking()); thinking.setMinHeight(UiKit.dp(this,48)); card.addView(thinking);
-        card.addView(UiKit.text(this,"仅对 DeepSeek 官方接口生效。思考内容用于工具协议，不在聊天中展示。",12,UiKit.MUTED)); UiKit.gap(card,20);
+        card.addView(UiKit.text(this,"适用于 DeepSeek 协议。思考内容用于工具协议，不在聊天中展示。",12,UiKit.MUTED)); UiKit.gap(card,20);
         save=UiKit.button(this,"保存连接",true,this::save); card.addView(save,UiKit.matchWrap()); UiKit.gap(card,10);
         test=UiKit.button(this,"测试已保存的连接",false,this::test); card.addView(test,UiKit.matchWrap()); UiKit.gap(card,10);
         card.addView(UiKit.text(this,"连接测试会请求一次模型，费用按你的服务账户计费。",11,UiKit.MUTED)); UiKit.gap(card,8);
@@ -47,9 +50,10 @@ public final class DshSettingsActivity extends Activity {
     private void save() {
         save.setEnabled(false); clear.setEnabled(false); String endpoint=url.getText().toString(),name=model.getText().toString(),secret=key.getText().toString(); boolean enabled=thinking.isChecked();
         long revision=graph.provider.reserveEdit();
+        int protocolChoice=protocol.getSelectedItemPosition();
         new Thread(()->{
             String result;
-            try { graph.provider.save(endpoint,name,secret,enabled,revision); result="连接已保存。现在可以返回对话。"; }
+            try { graph.provider.save(endpoint,name,secret,enabled,protocolChoice,revision); result="连接已保存。现在可以返回对话。"; }
             catch(IllegalArgumentException|IllegalStateException e) { result=e.getMessage(); }
             catch(Exception e) { result="无法保存加密密钥，请重试"; }
             final String message=result;

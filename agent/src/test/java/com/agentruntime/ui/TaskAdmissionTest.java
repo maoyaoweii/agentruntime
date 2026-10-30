@@ -93,6 +93,21 @@ public class TaskAdmissionTest {
         }
     }
 
+    @Test(timeout=8000) public void aDifferentOwnersStopCannotCancelTheActiveTask() throws Exception {
+        AgentApp app=(AgentApp)RuntimeEnvironment.getApplication(); CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
+        app.riskGate().setConfirmationChannel((id,summary)->{
+            entered.countDown(); try { release.await(4,TimeUnit.SECONDS); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } return false;
+        });
+        FutureTask<AgentRuntime.TaskResult> task=new FutureTask<>(()->TaskRunner.runTaskJson(task("scoped-cancel-fixture.txt"),false,false));
+        Thread worker=new Thread(task,"other-owner-fixture"); worker.start();
+        try {
+            assertTrue(entered.await(3,TimeUnit.SECONDS));
+            TaskRunner.cancel(new java.util.concurrent.atomic.AtomicBoolean());
+            assertFalse(worker.isInterrupted()); assertFalse(task.isDone());
+            release.countDown(); assertEquals("FAILED",task.get(3,TimeUnit.SECONDS).status);
+        } finally { release.countDown(); worker.join(1000); app.riskGate().setConfirmationChannel(app.confirmations()); }
+    }
+
     private String task(String path) throws Exception {
         return new JSONObject().put("task_version", "1.0").put("task_id", "admission")
                 .put("goal", "synthetic fixture").put("allowed_apps", new JSONArray())

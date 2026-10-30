@@ -57,4 +57,19 @@ public class ProviderProtocolTest {
         message.getJSONArray("tool_calls").put(call);
         assertThrows(Exception.class,()->ChatProtocol.validate(message,"tool_calls"));
     }
+    @Test public void adaptsProviderSpecificFieldsWithoutMutatingDurableMessages() throws Exception {
+        JSONArray history=new JSONArray().put(new JSONObject().put("role","assistant").put("content","earlier answer").put("reasoning_content","opaque-fixture"))
+                .put(new JSONObject().put("role","assistant").put("content","non-thinking answer"));
+        ProviderConfig.Snapshot deepseek=new ProviderConfig.Snapshot("https://api.deepseek.com","fixture","synthetic-key",true);
+        JSONArray deep=ChatProtocol.request(deepseek,history,new JSONArray()).getJSONArray("messages");
+        assertEquals("opaque-fixture",deep.getJSONObject(0).getString("reasoning_content"));
+        assertEquals("",deep.getJSONObject(1).getString("reasoning_content"));
+        ProviderConfig.Snapshot compatible=new ProviderConfig.Snapshot("https://example.com/v1","fixture","synthetic-key",false);
+        assertFalse(ChatProtocol.request(compatible,history,new JSONArray()).getJSONArray("messages").getJSONObject(0).has("reasoning_content"));
+        assertEquals("opaque-fixture",history.getJSONObject(0).getString("reasoning_content"));
+        assertFalse(history.getJSONObject(1).has("reasoning_content"));
+        ProviderConfig.Snapshot proxy=new ProviderConfig.Snapshot("https://example.com/deepseek","fixture","synthetic-key",true,1);
+        assertTrue(ChatProtocol.request(proxy,history,new JSONArray()).has("thinking"));
+        assertEquals("opaque-fixture",ChatProtocol.request(proxy,history,new JSONArray()).getJSONArray("messages").getJSONObject(0).getString("reasoning_content"));
+    }
 }
