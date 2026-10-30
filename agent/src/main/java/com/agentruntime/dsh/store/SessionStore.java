@@ -111,7 +111,7 @@ public final class SessionStore extends SQLiteOpenHelper {
     }
 
     public synchronized void append(String session,String turn,String type,JSONObject payload) {
-        if(!"running".equals(turnState(turn))) throw new IllegalStateException("Turn is already settled");
+        if(!"running".equals(boundState(session,turn))) throw new IllegalStateException("Turn is already settled");
         appendInternal(getWritableDatabase(),session,turn,type,payload);
     }
 
@@ -122,7 +122,7 @@ public final class SessionStore extends SQLiteOpenHelper {
     }
 
     public synchronized void finish(String session,String turn,String state,String code) throws JSONException {
-        if(!"running".equals(turnState(turn))) return;
+        if(!"running".equals(boundState(session,turn))) return;
         if(!java.util.Arrays.asList("completed","failed","cancelled","interrupted").contains(state)) throw new IllegalArgumentException("Invalid turn state");
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
         try {
@@ -149,6 +149,13 @@ public final class SessionStore extends SQLiteOpenHelper {
         }
     }
 
+    private String boundState(String session,String turn) {
+        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT state FROM turns WHERE id=? AND session_id=?",new String[]{turn,session})) {
+            if(!cursor.moveToFirst()) throw new IllegalArgumentException("Turn does not belong to this session");
+            return cursor.getString(0);
+        }
+    }
+
     public synchronized List<Event> events(String session) throws JSONException {
         List<Event> result=new ArrayList<>();
         try(Cursor cursor=getReadableDatabase().rawQuery("SELECT seq,turn_id,type,payload FROM events WHERE session_id=? ORDER BY seq DESC LIMIT 300",new String[]{session})) {
@@ -160,13 +167,16 @@ public final class SessionStore extends SQLiteOpenHelper {
     /** Whole turns are selected; cancelled/incomplete tool sequences never enter a later request. */
     public synchronized JSONArray history(String session,int maxCharacters) throws JSONException {
         LinkedHashMap<String,List<JSONObject>> byTurn=new LinkedHashMap<>();
-        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT e.turn_id,e.type,e.payload FROM events e JOIN turns t ON t.id=e.turn_id "
-                + "WHERE e.session_id=? AND t.state='completed' ORDER BY e.seq DESC LIMIT 1000",new String[]{session})) {
-            while(cursor.moveToNext()) {
-                String type=cursor.getString(1);
-                if(!type.equals("user_message")&&!type.equals("assistant_message")&&!type.equals("tool_result")) continue;
-                byTurn.computeIfAbsent(cursor.getString(0),key->new ArrayList<>()).add(new JSONObject(cursor.getString(2)));
+        List<String> ids=new ArrayList<>();
+        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT id FROM turns WHERE session_id=? AND state='completed' ORDER BY started DESC,rowid DESC LIMIT 12",new String[]{session})) {
+            while(cursor.moveToNext()) ids.add(cursor.getString(0));
+        }
+        for(String turn:ids) {
+            List<JSONObject> messages=new ArrayList<>();
+            try(Cursor cursor=getReadableDatabase().rawQuery("SELECT payload FROM events WHERE session_id=? AND turn_id=? AND type IN ('user_message','assistant_message','tool_result') ORDER BY seq DESC",new String[]{session,turn})) {
+                while(cursor.moveToNext()) messages.add(new JSONObject(cursor.getString(0)));
             }
+            byTurn.put(turn,messages);
         }
         List<List<JSONObject>> selected=new ArrayList<>(); int size=0;
         for(List<JSONObject> turn:byTurn.values()) {

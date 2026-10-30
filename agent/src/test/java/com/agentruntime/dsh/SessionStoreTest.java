@@ -52,4 +52,15 @@ public class SessionStoreTest {
             assertThrows(IllegalArgumentException.class,()->store.beginTurn(session,"x".repeat(16001),"chat","fixture"));
         }
     }
+
+    @Test public void cannotAppendOrFinishAnotherSessionsTurn() throws Exception {
+        try(SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
+            String a=store.createSession().id,b=store.createSession().id;
+            String turn=store.beginTurn(a,"fixture","chat","fixture");
+            assertThrows(IllegalArgumentException.class,()->store.append(b,turn,"assistant_message",new JSONObject()));
+            assertThrows(IllegalArgumentException.class,()->store.finish(b,turn,"completed","OK"));
+            assertTrue(store.events(b).isEmpty());
+            assertEquals("running",store.turnState(turn));
+        }
+    }
 }
