@@ -170,6 +170,9 @@ final class ChatRenderer {
             case "HTTP_402": return "模型服务余额不足，请检查账户。";
             case "HTTP_429": return "模型服务暂时限流，请稍后重新发送。";
             case "TOOL_LIMIT": case "MODEL_STEP_LIMIT": return "本次工具调用达到上限，已停止，请缩小任务范围。";
+            case "MODEL_REPEATED_CALL": case "DUPLICATE_TOOL_CALL":
+                return "模型反复提交了同一次工具调用，已自动合并并停止，没有重复执行。重新发送一次通常就好。";
+            case "TOOL_CALL_INVALID": return "模型的工具调用格式不正确（编号或参数不合法），请重新发送一次。";
             default: return "本次回复未完成（"+code+"）。请检查网络和模型设置后重新发送。";
         }
     }

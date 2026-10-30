@@ -7,7 +7,9 @@ import com.agentruntime.dsh.plugin.PluginRegistry;
 import com.agentruntime.dsh.store.SessionStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 /** One bounded turn: model -> sequential tools -> model, with durable settlement at every boundary. */
@@ -55,6 +57,12 @@ public final class DshRuntime {
             for(int i=0;i<history.length();i++) messages.put(history.getJSONObject(i));
             messages.put(new JSONObject().put("role","user").put("content",text));
             JSONArray schemas=plugins.schemas(); Set<String> ids=new HashSet<>(); int toolCount=0;
+            // 同一次回复里的 id 会跨轮复用：同参数按"重试"处理，直接复上次结果，不重复执行。
+            Map<String,String> callArgs=new HashMap<>();
+            Map<String,JSONObject> callResults=new HashMap<>();
+            // 同一个 id 同参数最多容忍一次重放：第二次还这样说明模型卡住了，继续只会空转。
+            Map<String,Integer> replays=new HashMap<>();
+            int idSeq=0;
             // 真实应用的一条链路（打开微信 → 读屏 → 点搜索 → 输入 → 读屏 → 点联系人 → 输入 → 发送 → 复核）
             // 就要 8~10 次工具调用。原来的 8 步/12 次会把任务腰斩在半路，这里放宽到 12 步/18 次，
             // 仍有 3 分钟总时限兜底，不至于无限跑。
@@ -67,13 +75,29 @@ public final class DshRuntime {
                 });
                 cancellation.check();
                 JSONArray calls=answer.optJSONArray("tool_calls");
-                if(calls!=null) {
-                    Set<String> admittedIds=new HashSet<>();
+                // 有些模型/代理会在不同轮次复用同一个 tool_call id（甚至每轮都从 call_0 重新编号）。
+                // 这不该让整轮回复作废：同 id 同参数视为"没拿到结果的重试"，复用上次结果，
+                // 既不重复产生副作用，也不用用户重发；同 id 不同参数则改名后照常执行。
+                Map<String,JSONObject> replay=new HashMap<>();
+                if(calls!=null&&calls.length()>0) {
                     for(int i=0;i<calls.length();i++) {
-                        String id=calls.getJSONObject(i).getString("id");
-                        if(ids.contains(id)||!admittedIds.add(id)) throw new java.io.IOException("DUPLICATE_TOOL_CALL");
+                        JSONObject call=calls.getJSONObject(i);
+                        String id=call.getString("id");
+                        String arguments=call.getJSONObject("function").optString("arguments","{}");
+                        if(!ids.add(id)) {
+                            JSONObject cached=callResults.get(id);
+                            // 只复用"成功"的结果：失败结果可能因为界面切回来了而重试成功，
+                            // 必须让它真的再执行一次。
+                            if(arguments.equals(callArgs.get(id))&&cached!=null&&cached.optBoolean("ok",false)) {
+                                if(replays.merge(id,1,Integer::sum)>1) throw new java.io.IOException("MODEL_REPEATED_CALL");
+                                replay.put(id,cached);
+                            } else {
+                                String fresh=id+"_"+(++idSeq);
+                                call.put("id",fresh);
+                                ids.add(fresh);
+                            }
+                        }
                     }
-                    ids.addAll(admittedIds);
                 }
                 store.append(session,turn,"assistant_message",answer); messages.put(answer); partial.setLength(0); listener.settled();
                 if(calls==null||calls.length()==0) { store.finish(session,turn,"completed","OK"); listener.settled(); return turn; }
@@ -84,7 +108,15 @@ public final class DshRuntime {
                     listener.status("正在调用 · "+name);
                     store.append(session,turn,"tool_started",new JSONObject().put("id",id).put("name",name).put("arguments",args));
                     listener.settled();
-                    JSONObject result=++toolCount>MAX_TOOLS?PluginRegistry.failure("TOOL_LIMIT"):plugins.invoke(name,args,cancellation);
+                    JSONObject result;
+                    if(replay.containsKey(id)) {
+                        // 重试的同一调用：复用结果，不重复执行（避免重复发送/重复点击）。
+                        result=replay.get(id);
+                    } else {
+                        result=++toolCount>MAX_TOOLS?PluginRegistry.failure("TOOL_LIMIT"):plugins.invoke(name,args,cancellation);
+                        callArgs.put(id,function.optString("arguments","{}"));
+                        callResults.put(id,result);
+                    }
                     // A successful side effect must remain visible even if cancellation arrives just afterwards.
                     JSONObject message=new JSONObject().put("role","tool").put("tool_call_id",id).put("content",result.toString());
                     store.append(session,turn,"tool_result",message); messages.put(message); listener.settled();
@@ -104,7 +136,7 @@ public final class DshRuntime {
 
     public static String errorCode(Exception error) {
         String message=error.getMessage();
-        if(message!=null&&message.matches("HTTP_[1-5][0-9]{2}|CONTEXT_LIMIT|TOOL_LIMIT|MODEL_STEP_LIMIT|DUPLICATE_TOOL_CALL|MODEL_RESPONSE_TOO_LARGE|STREAM_FRAME_TOO_LARGE|PROVIDER_ERROR")) return message;
+        if(message!=null&&message.matches("HTTP_[1-5][0-9]{2}|CONTEXT_LIMIT|TOOL_LIMIT|MODEL_STEP_LIMIT|MODEL_REPEATED_CALL|DUPLICATE_TOOL_CALL|MODEL_RESPONSE_TOO_LARGE|STREAM_FRAME_TOO_LARGE|PROVIDER_ERROR")) return message;
         if(error instanceof java.net.SocketTimeoutException) return "NETWORK_TIMEOUT";
         if(error instanceof java.io.IOException) return "NETWORK_OR_PROTOCOL_ERROR";
         return "TURN_FAILED";

@@ -10,8 +10,8 @@ android {
         applicationId 'com.agentruntime.agent'
         minSdk 26
         targetSdk 34
-        versionCode 12
-        versionName '2.0.2-mobile-preview.4'
+        versionCode 13
+        versionName '2.0.3-mobile-preview.5'
         testInstrumentationRunner 'com.agentruntime.DeviceSmokeInstrumentation'
         // 两个 ABI 都打进去：
         // - arm64-v8a 覆盖 2020 年后的真机（99% 的现役设备）
