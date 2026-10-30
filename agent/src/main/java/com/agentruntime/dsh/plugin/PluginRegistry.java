@@ -88,15 +88,75 @@ public final class PluginRegistry {
             // interruption never turns a completed write/action into an implied safe-to-repeat failure.
             if(!entry.tool.sideEffect) { cancellation.check(); if(!enabled(entry.plugin)) return failure("PLUGIN_DISABLED"); }
             if(result==null) return failure("TOOL_FAILED");
-            if(result.toString().length()>32768) return new JSONObject().put("ok",result.optBoolean("ok",false))
-                    .put("code",result.optString("code","RESULT_TOO_LARGE")).put("data_omitted",true)
-                    .put("message","工具已返回，详细结果超过会话大小上限");
+            if(result.toString().length()>32768) result=clamp(result);
             return result;
             } finally { synchronized(PluginRegistry.this) { active.remove(invocation); } }
         }
     }
     public static JSONObject failure(String code) throws Exception { return new JSONObject().put("ok",false).put("code",code); }
     public static JSONObject success(String code,Object data) throws Exception { return new JSONObject().put("ok",true).put("code",code).put("data",data); }
+
+    /**
+     * 结果超限时保留内容而不是整段丢掉。
+     *
+     * <p>之前超 32 KB 直接返回 data_omitted，网页正文和读屏结果就变成了"工具成功了但没有内容"，
+     * 模型只能空转。现在先按字段截断：output 留头留尾，data 里的长字符串截到 6000 字符，
+     * 仍然超限才丢弃 data，但 output 始终保留。
+     */
+    private static JSONObject clamp(JSONObject result) throws Exception {
+        JSONObject out=new JSONObject();
+        out.put("ok",result.optBoolean("ok",false));
+        out.put("code",result.optString("code","RESULT_CLAMPED"));
+        out.put("truncated",true);
+        String output=result.optString("output","");
+        if(!output.isEmpty()) out.put("output",headTail(output,20000));
+        JSONObject data=result.optJSONObject("data");
+        if(data!=null) {
+            JSONObject shrunk=shrink(data,6000);
+            if(shrunk.toString().length()<=12000) out.put("data",shrunk);
+        }
+        if(!out.has("data")&&!out.has("output")) {
+            out.put("output",headTail(result.toString(),12000));
+        }
+        return out;
+    }
+
+    private static JSONObject shrink(JSONObject source,int limit) {
+        JSONObject copy=new JSONObject();
+        Iterator<String> keys=source.keys();
+        while(keys.hasNext()) {
+            String key=keys.next();
+            Object value=source.opt(key);
+            try {
+                if(value instanceof String) copy.put(key,headTail((String)value,limit));
+                else if(value instanceof JSONObject) copy.put(key,shrink((JSONObject)value,limit));
+                else if(value instanceof JSONArray) copy.put(key,shrink((JSONArray)value,limit));
+                else copy.put(key,value);
+            } catch(Exception ignored) { }
+        }
+        return copy;
+    }
+
+    private static JSONArray shrink(JSONArray source,int limit) {
+        JSONArray copy=new JSONArray();
+        for(int i=0;i<source.length();i++) {
+            Object value=source.opt(i);
+            try {
+                if(value instanceof String) copy.put(headTail((String)value,limit));
+                else if(value instanceof JSONObject) copy.put(shrink((JSONObject)value,limit));
+                else if(value instanceof JSONArray) copy.put(shrink((JSONArray)value,limit));
+                else copy.put(value);
+            } catch(Exception ignored) { }
+        }
+        return copy;
+    }
+
+    private static String headTail(String value,int limit) {
+        if(value==null||value.length()<=limit) return value==null?"":value;
+        int head=limit*3/4, tail=limit-head;
+        return value.substring(0,head)+"\n…（中间已省略 "+(value.length()-limit)+" 字）…\n"
+                +value.substring(value.length()-tail);
+    }
     public static JSONObject schema(JSONObject properties,String... required) throws Exception {
         return new JSONObject().put("type","object").put("properties",properties)
                 .put("required",new JSONArray(Arrays.asList(required))).put("additionalProperties",false);

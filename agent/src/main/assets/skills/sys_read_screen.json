@@ -1,0 +1,14 @@
+{
+  "skill_id": "sys.read_screen",
+  "version": "1.0",
+  "target_package": null,
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "读取当前前台界面的可见文字与可点击位置，这是操作真实第三方应用（微信、B站等）的第一步。只想看设备电量/网络请用 sys.observe。读不到界面时返回 A11Y_ROOT_UNAVAILABLE",
+  "postconditions": [],
+  "steps": [
+    {"action": "read_screen", "params": {"max_chars": 4000}, "timeout_ms": 12000}
+  ]
+}

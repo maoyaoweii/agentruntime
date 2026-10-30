@@ -143,8 +143,14 @@ public final class TaskRunner {
 
     private static AgentRuntime.TaskResult execute(TaskSpec task, boolean autoConfirm,
                                                     boolean allowReplan, AtomicBoolean cancellation) {
+        return execute(task, autoConfirm, allowReplan, cancellation, false);
+    }
+
+    private static AgentRuntime.TaskResult execute(TaskSpec task, boolean autoConfirm,
+                                                    boolean allowReplan, AtomicBoolean cancellation,
+                                                    boolean includeObservations) {
         return AgentApp.get().agentRuntime().runTask(task, BuildConfig.DEBUG && autoConfirm,
-                allowReplan, TaskBus.get().runtimeListener(), cancellation);
+                allowReplan, TaskBus.get().runtimeListener(), cancellation, includeObservations);
     }
 
     /** 直接按技能 ID 执行内置技能（快捷面板用，跳过自然语言规划）。 */
@@ -183,7 +189,7 @@ public final class TaskRunner {
         taskJson.put("limits", limits);
 
         return runExclusive(autoConfirm,cancellation -> execute(DslParser.parseTask(taskJson.toString()),
-                autoConfirm,owner==null,cancellation),owner);
+                autoConfirm,owner==null,cancellation,true),owner);
     }
 
     public static File writeResult(com.agentruntime.AgentApp app, JSONObject result) throws IOException {

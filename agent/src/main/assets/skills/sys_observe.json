@@ -6,6 +6,7 @@
   "risk": "LOW",
   "confirmation": "never",
   "max_retries": 1,
+  "recovery": "只读设备环境（电量、网络、屏幕参数、无障碍是否连通），不读界面文字；想看当前界面写了什么请用 sys.read_screen",
   "postconditions": [],
   "steps": [
     {"action": "observe", "params": {}, "timeout_ms": 8000}

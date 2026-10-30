@@ -26,6 +26,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class AgentRuntime {
 
+    /** 单个动作回给模型的观察内容上限；足够放下屏文字或网页摘要，又不会撑爆上下文。 */
+    private static final int ACTION_DETAIL_LIMIT = 6000;
+
     /**
      * 执行过程监听器：把内部进度暴露给 UI / 悬浮窗 / 通知。
      *
@@ -90,6 +93,17 @@ public final class AgentRuntime {
     /** Shares cancellation with planning so a stop request cannot be lost at execution start. */
     public TaskResult runTask(TaskSpec task, boolean autoConfirm, boolean allowReplan,
                               Listener listener, AtomicBoolean cancellation) {
+        return runTask(task, autoConfirm, allowReplan, listener, cancellation, false);
+    }
+
+    /**
+     * @param includeObservations 是否把动作观察内容（屏文字、网页正文、文件内容）带回 TaskResult。
+     *        只在"结果要交给模型继续决策"的链路（DSH 的 run_skill）里打开；默认关闭，
+     *        这样落库的 TaskResult 仍然不含敏感正文，历史脱敏测试也继续成立。
+     */
+    public TaskResult runTask(TaskSpec task, boolean autoConfirm, boolean allowReplan,
+                              Listener listener, AtomicBoolean cancellation,
+                              boolean includeObservations) {
         if (!running.compareAndSet(false, true)) {
             return new TaskResult(task.taskId, "BUSY", new JSONObject());
         }
@@ -103,6 +117,9 @@ public final class AgentRuntime {
                 }
             }
             TaskResult result = doRunTask(task, autoConfirm, allowReplan, listener);
+            if (!includeObservations) {
+                result = new TaskResult(result.taskId, result.status, withoutObservations(result.detail));
+            }
             if (listener != null) {
                 try {
                     listener.onFinish(result);
@@ -371,7 +388,8 @@ public final class AgentRuntime {
                 }
                 JSONObject ar = new JSONObject();
                 ar.put("action", action.type.wireName());
-                ar.put("result", r.toLogJson());
+                // 模型需要"看到了什么"才可能做下一步；审计另走 toLogJson，屏内容不入盘。
+                ar.put("result", r.toToolJson(ACTION_DETAIL_LIMIT));
                 actionLog.put(ar);
                 if (cancelRequested.get()) {
                     stepOk = false;
@@ -483,7 +501,31 @@ public final class AgentRuntime {
         } catch (JSONException ignored) {
         }
         auditLogger.record(task.taskId, "-", "task_finish", "runtime",
-                stateEngine.currentEpoch(), status, detail);
+                stateEngine.currentEpoch(), status, withoutObservations(detail));
         return new TaskResult(task.taskId, status, detail);
+    }
+
+    /**
+     * 审计副本：保留状态码与耗时，去掉动作观察内容（屏幕文字、网页正文、文件内容）。
+     * 观察内容只在本次会话内存里给模型用，不写进持久化审计。
+     */
+    private static JSONObject withoutObservations(JSONObject detail) {
+        try {
+            JSONObject copy = new JSONObject(detail.toString());
+            JSONArray steps = copy.optJSONArray("steps");
+            if (steps != null) for (int i = 0; i < steps.length(); i++) {
+                JSONObject step = steps.optJSONObject(i);
+                JSONArray actions = step == null ? null : step.optJSONArray("actions");
+                if (actions == null) continue;
+                for (int j = 0; j < actions.length(); j++) {
+                    JSONObject action = actions.optJSONObject(j);
+                    JSONObject result = action == null ? null : action.optJSONObject("result");
+                    if (result != null) result.remove("detail");
+                }
+            }
+            return copy;
+        } catch (Exception e) {
+            return new JSONObject();
+        }
     }
 }

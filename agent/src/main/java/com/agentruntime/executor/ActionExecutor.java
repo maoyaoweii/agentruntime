@@ -517,6 +517,14 @@ public final class ActionExecutor {
                 result = ExecResult.ok("STATE_READ", value, epoch, elapsed(start));
                 break;
             }
+            case READ_SCREEN: {
+                result = readScreen(before, spec, epoch, start);
+                break;
+            }
+            case INPUT_FOCUSED: {
+                result = inputFocused(before, spec, epoch, start);
+                break;
+            }
             case REQUEST_CONFIRMATION: {
                 result = decision.allow ? ExecResult.ok("CONFIRMED", decision.reason, epoch, elapsed(start))
                         : ExecResult.reject("CONFIRM_REJECTED", decision.reason, epoch);
@@ -686,6 +694,106 @@ public final class ActionExecutor {
                 spec.params.optLong("hold_ms", 800), spec.timeoutMs);
     }
 
+    /**
+     * 把当前界面的可见文字读成一段文本，供模型直接决策。
+     *
+     * <p>之前只有 sys.observe（设备电量/网络），模型想看界面就只能截图，而截图又拿不到像素，
+     * 于是"能点不能读"。这里用无障碍树本身作为读通道：文字、可点击位置、可输入框、滚动容器。
+     * 读不到根节点时明确报 A11Y_ROOT_UNAVAILABLE，而不是返回一条空成功。
+     */
+    private ExecResult readScreen(WorldState state, ActionSpec spec, long epoch, long start) {
+        if (state == null || state.root == null) {
+            return ExecResult.fail("A11Y_ROOT_UNAVAILABLE",
+                    "无障碍服务在运行，但没有返回界面节点。请到 系统设置 → 无障碍 → DSH Mobile 确认开关为开启；"
+                            + "部分厂商系统（小米/OPPO/vivo/华为）还需要允许「受限设置」，或把目标应用切到前台后重试。",
+                    epoch, elapsed(start));
+        }
+        int maxChars = spec.params.optInt("max_chars", 4000);
+        if (maxChars < 400) maxChars = 400;
+        if (maxChars > 8000) maxChars = 8000;
+
+        // 读到自己头上是最隐蔽的失败：聊天气泡里也有"热门""发送"，点下去当然不可交互。
+        String own = appContext == null ? null : appContext.getPackageName();
+        if (own != null && own.equals(state.foregroundPackage)) {
+            return ExecResult.fail("SELF_WINDOW_FOCUSED",
+                    "当前前台是 DSH 自己的聊天界面，不是要操作的应用。请先把目标应用切到前台，再读屏。",
+                    epoch, elapsed(start));
+        }
+
+        StringBuilder body = new StringBuilder();
+        int shown = 0;
+        java.util.List<UiNode> nodes = state.root.flat();
+        for (UiNode node : nodes) {
+            String label = node.text != null && !node.text.trim().isEmpty()
+                    ? node.text.trim() : node.contentDescription;
+            boolean hasLabel = label != null && !label.trim().isEmpty();
+            if (!hasLabel && !node.editable && !node.scrollable) continue;
+            if (!node.visible) continue;
+
+            StringBuilder line = new StringBuilder();
+            line.append(hasLabel ? "「" + clipText(label.trim(), 120) + "」" : "[" + simpleClass(node.className) + "]");
+            if (node.editable) line.append(node.focused ? " 输入框(已聚焦)" : " 输入框");
+            if (node.clickable) line.append(" 可点");
+            if (node.scrollable) line.append(" 可滚动");
+            if (node.left >= 0 && node.bottom > node.top) {
+                line.append(" @").append(node.left).append(',').append(node.top)
+                        .append('-').append(node.right).append(',').append(node.bottom);
+            }
+            if (body.length() + line.length() + 1 > maxChars) {
+                body.append("\n…（已达 ").append(maxChars).append(" 字上限，先滚动或缩小范围再读）");
+                break;
+            }
+            body.append('\n').append(line);
+            shown++;
+        }
+        if (shown == 0) {
+            return ExecResult.ok("SCREEN_EMPTY",
+                    "界面读到了，但没有可读文字或可点节点（package=" + state.foregroundPackage
+                            + "，节点数=" + state.nodeCount() + "）。可能是自绘界面、启动广告页或正在加载。",
+                    epoch, elapsed(start));
+        }
+        String header = "package=" + state.foregroundPackage
+                + " window=" + (state.windowTitle == null ? "-" : clipText(state.windowTitle, 40))
+                + " 节点=" + state.nodeCount() + " 可读=" + shown;
+        return ExecResult.ok("SCREEN_TEXT", header + body, epoch, elapsed(start));
+    }
+
+    /**
+     * 往当前聚焦/第一个可编辑输入框写字。
+     *
+     * <p>真实应用（微信、短信、搜索框）几乎都靠"先点输入框，再打字"。
+     * 让模型每次都先 read_screen 找 node id 再 input_text 太脆；这里直接用焦点状态落笔，
+     * 与真人操作顺序一致：tap_text 点输入框 → type_text 写字。
+     */
+    private ExecResult inputFocused(WorldState state, ActionSpec spec, long epoch, long start) {
+        if (state == null || state.root == null) {
+            return ExecResult.fail("A11Y_ROOT_UNAVAILABLE", "读不到界面节点，无法确定输入框", epoch, elapsed(start));
+        }
+        UiNode field = null;
+        java.util.List<UiNode> nodes = state.root.flat();
+        if (state.focusNodeId != null) {
+            for (UiNode node : nodes) if (state.focusNodeId.equals(node.nodeId) && node.editable) { field = node; break; }
+        }
+        if (field == null) for (UiNode node : nodes) if (node.editable && node.visible) { field = node; break; }
+        if (field == null) {
+            return ExecResult.fail("NO_INPUT_FIELD",
+                    "当前界面没有可编辑输入框。先点一下要输入的框（sys.tap_text），再调用 sys.type_text。",
+                    epoch, elapsed(start));
+        }
+        ExecResult result = accessibilityBridge.performInput(field, spec.param("text"), spec.timeoutMs);
+        return result;
+    }
+
+    private static String simpleClass(String className) {
+        if (className == null) return "node";
+        int dot = className.lastIndexOf('.');
+        return dot >= 0 ? className.substring(dot + 1) : className;
+    }
+
+    private static String clipText(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max) + "…";
+    }
+
     /** 截图并落盘留证：审计里只存路径与体积，不存二进制。 */
     private ExecResult doScreenshot(ActionSpec spec, long epoch, long start) {
         ExtendedCapabilities c = capabilities;
@@ -713,7 +821,9 @@ public final class ActionExecutor {
         } catch (Throwable t) {
             path = "save_failed:" + t.getClass().getSimpleName();
         }
-        return ExecResult.ok("SHOT_OK", frame.describe() + " path=" + path, epoch, elapsed(start));
+        return ExecResult.ok("SHOT_OK", frame.describe() + " path=" + path
+                + "\n说明：截图只保存在本机用于留证，当前会话不会把像素回传给模型，"
+                + "所以不要靠截图读内容；要读界面文字请调用 sys.read_screen。", epoch, elapsed(start));
     }
 
     /**
@@ -794,6 +904,14 @@ public final class ActionExecutor {
                 return ExecResult.fail("A11Y_ROOT_UNAVAILABLE",
                         "accessibility root unavailable (service bound but no window tree);"
                                 + " rebind accessibility service", epoch, elapsed(start));
+            }
+            String own = appContext == null ? null : appContext.getPackageName();
+            if (own != null && own.equals(state.foregroundPackage)) {
+                // 在自己的聊天界面里找"热门"，命中的是气泡文字，点了必然不可交互。
+                logTap("self-window");
+                return ExecResult.fail("SELF_WINDOW_FOCUSED",
+                        "当前前台是 DSH 自己的聊天界面，不是目标应用；先把目标应用切到前台再点",
+                        epoch, elapsed(start));
             }
             UiNode node = pickByText(state, query);
             logTap("attempt=" + attempt + " root=" + rootBounds(state)

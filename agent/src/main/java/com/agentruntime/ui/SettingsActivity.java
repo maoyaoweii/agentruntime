@@ -523,7 +523,10 @@ public final class SettingsActivity extends Activity {
         sb.append("电量      ").append(s.batteryPercent).append('%')
                 .append(s.charging ? " 充电中" : "").append('\n');
         sb.append("网络      ").append(s.network).append('\n');
-        sb.append("无障碍    ").append(s.a11yConnected ? "已连接" : "未连接")
+        sb.append("无障碍    ").append(com.agentruntime.device.A11yStatus.summary(this)).append('\n');
+        sb.append("          系统勾选 ").append(s.a11yEnabledInSettings ? "是" : "否")
+                .append("  已绑定 ").append(s.a11yConnected ? "是" : "否")
+                .append("  可读屏 ").append(s.a11yRootReady ? "是" : "否")
                 .append("  截图 ").append(s.canCapture ? "可" : "不可").append('\n');
         sb.append("指纹      ").append(s.fingerprint());
         tvEnv.setText(sb.toString());

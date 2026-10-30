@@ -107,7 +107,10 @@ final class ChatRenderer {
         LinearLayout wrapper=UiKit.column(activity); UiKit.pad(wrapper,16,12,16,12);
         wrapper.setBackground(UiKit.shape(activity,user?0xffeaf0ff:UiKit.WHITE,user?0:UiKit.LINE,20));
         wrapper.addView(UiKit.bold(activity,user?"你":"DSH",11,user?UiKit.BLUE:UiKit.MUTED)); UiKit.gap(wrapper,5);
-        TextView text=UiKit.text(activity,UiKit.visible(value),16,UiKit.INK); text.setTextIsSelectable(true); text.setLineSpacing(UiKit.dp(activity,5),1); wrapper.addView(text);
+        String safe=UiKit.visible(value);
+        // 助手的回复带 Markdown（**加粗**、`代码`、表格）；用户自己打的字原样显示。
+        TextView text=user?UiKit.text(activity,safe,16,UiKit.INK):UiKit.rich(activity,Markdown.render(activity,safe),16,UiKit.INK);
+        text.setTextIsSelectable(true); text.setLineSpacing(UiKit.dp(activity,5),1); wrapper.addView(text);
         LinearLayout.LayoutParams p=UiKit.matchWrap(); p.bottomMargin=UiKit.dp(activity,14); if(user) p.setMarginStart(UiKit.dp(activity,28)); else p.setMarginEnd(UiKit.dp(activity,12)); content.addView(wrapper,p);
     }
     private static boolean orphanResult(SessionStore.Event event,Set<String> started) {

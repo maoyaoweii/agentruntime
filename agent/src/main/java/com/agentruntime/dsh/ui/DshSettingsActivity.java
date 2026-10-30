@@ -22,6 +22,7 @@ public final class DshSettingsActivity extends Activity {
     private Switch thinking;
     private Spinner protocol;
     private TextView saved;
+    private TextView a11yLine,a11yHint;
     private Button save,test,clear;
     private ImageButton reveal;
     private boolean keyVisible,secureInitially;
@@ -30,6 +31,7 @@ public final class DshSettingsActivity extends Activity {
         super.onCreate(state); graph=AgentApp.get().dsh();
         secureInitially=(getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0;
         LinearLayout page=UiKit.page(this,"连接与设置",null);
+        page.addView(permissionCard()); UiKit.gap(page,14);
         LinearLayout card=UiKit.card(this); card.addView(UiKit.bold(this,"模型服务",18,UiKit.INK)); UiKit.gap(card,14);
         url=UiKit.input(this,"https://api.deepseek.com",false); url.setId(com.agentruntime.agent.R.id.dsh_model_url); url.setContentDescription("服务地址");
         url.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI); url.setText(graph.provider.url()); UiKit.formRow(card,"服务地址",url);
@@ -66,6 +68,58 @@ public final class DshSettingsActivity extends Activity {
                 }).show());
         privacy.addView(clear,UiKit.matchWrap()); page.addView(privacy);
         UiKit.gap(page,12); page.addView(UiKit.text(this,"DSH Mobile 2.0  ·  Android 原生实现\n参考 DeepSeek Harness 的插件、会话事件与工具循环设计。",12,UiKit.MUTED));
+    }
+    /**
+     * 无障碍状态卡。
+     *
+     * <p>真机反馈的高频困惑："我明明开了无障碍，App 却说不可用。" 这里把三层状态分开显示
+     * （系统勾选 / 服务绑定 / 能读到界面），并给出一键跳转，避免用户在两处设置之间乱猜。
+     */
+    private LinearLayout permissionCard() {
+        LinearLayout card=UiKit.card(this);
+        LinearLayout head=UiKit.row(this);
+        head.addView(UiKit.bold(this,"手机权限",18,UiKit.INK),new LinearLayout.LayoutParams(0,-2,1));
+        Button detail=UiKit.button(this,"诊断",false,this::showA11yHelp); detail.setTextSize(12); detail.setTextColor(UiKit.LINK);
+        detail.setBackground(UiKit.ripple(this,0xfff1f5ff,0,12)); head.addView(detail,new LinearLayout.LayoutParams(-2,UiKit.dp(this,36)));
+        card.addView(head); UiKit.gap(card,10);
+        a11yLine=UiKit.text(this,"",14,UiKit.INK); a11yLine.setTextIsSelectable(true); card.addView(a11yLine); UiKit.gap(card,4);
+        a11yHint=UiKit.text(this,"",12,UiKit.MUTED); card.addView(a11yHint); UiKit.gap(card,10);
+        LinearLayout actions=UiKit.row(this);
+        Button fix=UiKit.button(this,"修复无障碍",true,this::showA11yHelp);
+        actions.addView(fix,new LinearLayout.LayoutParams(0,UiKit.dp(this,44),1));
+        Button open=UiKit.button(this,"打开系统设置",false,()->openA11ySettings());
+        open.setTextColor(UiKit.LINK); open.setBackground(UiKit.ripple(this,UiKit.WHITE,0xffb7c5ff,14));
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,UiKit.dp(this,44),1); p.setMarginStart(UiKit.dp(this,8)); actions.addView(open,p);
+        card.addView(actions);
+        refreshA11y();
+        return card;
+    }
+    private void refreshA11y() {
+        if(a11yLine==null) return;
+        int level=com.agentruntime.device.A11yStatus.level(this);
+        a11yLine.setText("无障碍  "+com.agentruntime.device.A11yStatus.summary(this));
+        a11yLine.setTextColor(level==0?0xff1a7858:0xffa46516);
+        a11yHint.setText(level==0?"可以读写界面，跨应用操作已就绪。":"点「修复无障碍」看具体该改哪一项。");
+    }
+    @Override protected void onResume() { super.onResume(); refreshA11y(); }
+    private void showA11yHelp() {
+        refreshA11y();
+        new AlertDialog.Builder(this).setTitle("无障碍诊断")
+                .setMessage(com.agentruntime.device.A11yStatus.summary(this)+"\n\n"
+                        +com.agentruntime.device.A11yStatus.remedy(this))
+                .setNegativeButton("关闭",null)
+                .setNeutralButton("应用详情",(d,w)->openAppDetails())
+                .setPositiveButton("无障碍设置",(d,w)->openA11ySettings()).show();
+    }
+    private void openA11ySettings() {
+        try { startActivity(new android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
+        catch(Exception e) { UiKit.toast(this,"无法打开无障碍设置"); }
+    }
+    private void openAppDetails() {
+        try {
+            startActivity(new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:"+getPackageName())));
+        } catch(Exception e) { UiKit.toast(this,"无法打开应用详情"); }
     }
     private FrameLayout withAction(EditText input,ImageButton action) {
         FrameLayout frame=new FrameLayout(this); input.setPadding(UiKit.dp(this,14),UiKit.dp(this,12),UiKit.dp(this,52),UiKit.dp(this,12));

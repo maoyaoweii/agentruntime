@@ -23,6 +23,9 @@ public final class UiKit {
     public static TextView text(Context c,String value,float size,int color) {
         TextView v=new TextView(c); v.setText(value); v.setTextSize(size); v.setTextColor(color); v.setFontFeatureSettings("kern"); v.setLineSpacing(dp(c,3),1); return v;
     }
+    public static TextView rich(Context c,CharSequence value,float size,int color) {
+        TextView v=new TextView(c); v.setText(value); v.setTextSize(size); v.setTextColor(color); v.setFontFeatureSettings("kern"); v.setLineSpacing(dp(c,3),1); return v;
+    }
     public static TextView bold(Context c,String value,float size,int color) { TextView v=text(c,value,size,color); v.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL)); return v; }
     public static TextView title(Context c,String value,float size) { TextView v=text(c,value,size,INK); v.setTypeface(Typeface.create("sans-serif",Typeface.BOLD)); v.setLetterSpacing(-.025f); return v; }
     public static GradientDrawable shape(Context c,int color,int stroke,int radius) {

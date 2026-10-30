@@ -137,10 +137,11 @@ public final class DshActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume();
+        com.agentruntime.ui.AppWindow.track(this);
         if(graph.sessions.session(session)==null) { session=graph.sessions.createSession().id; composer.setText(""); renderer.reset(); }
         graph.controller.observe(update); refresh();
     }
-    @Override protected void onPause() { saveDraft(); graph.controller.remove(update); super.onPause(); }
+    @Override protected void onPause() { saveDraft(); com.agentruntime.ui.AppWindow.untrack(this); graph.controller.remove(update); super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle out) { out.putString("session",session); out.putString("draft",composer.getText().toString()); out.putBoolean("tools",tools); super.onSaveInstanceState(out); }
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent); String target=intent.getStringExtra("session");

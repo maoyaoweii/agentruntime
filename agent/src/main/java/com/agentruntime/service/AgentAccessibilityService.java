@@ -51,6 +51,19 @@ public final class AgentAccessibilityService extends AccessibilityService {
         snapshot("service_connected");
     }
 
+    /**
+     * 当前这一刻能否真的读到界面节点。
+     *
+     * <p>给环境快照用：{@link #getInstance()} 非空只代表服务被系统绑上了，不代表能读屏。
+     * 这里做一次真实读取（含窗口兜底），读到的节点立刻回收，避免泄漏。
+     */
+    public boolean canReadRootNow() {
+        AccessibilityNodeInfo root = activeRoot();
+        if (root == null) return false;
+        root.recycle();
+        return true;
+    }
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
@@ -199,11 +212,27 @@ public final class AgentAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** 语义定位后在存活树上执行点击。 */
+    /**
+     * 语义定位后点击。
+     *
+     * <p>真实应用里可读文字往往挂在不可点的 TextView 上，可点的是它的父容器（列表项、卡片、Tab）。
+     * 只判断目标节点本身 clickable，就会把"热门""搜索"这类入口一律判成 NODE_NOT_INTERACTABLE。
+     * 这里沿父链向上找最近的可点节点再点，最多 5 层。
+     */
     public boolean click(UiNode target) {
         AccessibilityNodeInfo live = findLiveNode(target);
         if (live == null) return false;
-        boolean ok = live.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        boolean ok = false;
+        AccessibilityNodeInfo cursor = live;
+        while (cursor != null && !ok) {
+            if (cursor.isClickable() && cursor.isEnabled()) {
+                ok = cursor.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            }
+            AccessibilityNodeInfo parent = ok ? null : cursor.getParent();
+            if (cursor != live) cursor.recycle();
+            cursor = parent;
+        }
+        if (cursor != null && cursor != live) cursor.recycle();
         live.recycle();
         return ok;
     }
