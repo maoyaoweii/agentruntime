@@ -83,6 +83,11 @@ public final class A11yStatus {
         return out;
     }
 
+    /** 发消息前的预检：只有手机助手模式、且无障碍真的不可用时才拦一下。 */
+    public static boolean shouldWarnOnSend(Context context, boolean toolsMode) {
+        return toolsMode && level(context) != 0;
+    }
+
     /** 一句话说清现在卡在哪一层。 */
     public static String summary(Context context) {
         switch (level(context)) {

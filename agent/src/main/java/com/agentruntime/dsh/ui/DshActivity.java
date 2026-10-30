@@ -20,6 +20,7 @@ public final class DshActivity extends Activity {
     private DshGraph graph;
     private String session;
     private boolean tools=true;
+    private boolean a11yWarned=false;
     private TextView subtitle,status;
     private Button connection;
     private EditText composer;
@@ -103,6 +104,17 @@ public final class DshActivity extends Activity {
         if(active!=null) { graph.controller.cancel(active.id,"USER_CANCELLED"); return; }
         String text=composer.getText().toString().trim(); if(text.isEmpty()) return;
         if(!graph.provider.configured()) { UiKit.open(this,DshSettingsActivity.class); return; }
+        // 手机操作前先看一眼无障碍：不然模型要浪费七八轮工具调用才发现根本读不到界面。
+        if(!a11yWarned&&com.agentruntime.device.A11yStatus.shouldWarnOnSend(this,tools)) {
+            a11yWarned=true;
+            new android.app.AlertDialog.Builder(this).setTitle("手机操作还不可用")
+                    .setMessage(com.agentruntime.device.A11yStatus.summary(this)+"\n\n"
+                            +com.agentruntime.device.A11yStatus.remedy(this)+"\n\n纯聊天不受影响。")
+                    .setPositiveButton("知道了",null)
+                    .setNeutralButton("去修复",(d,w)->UiKit.open(this,DshSettingsActivity.class))
+                    .setNegativeButton("仍然发送",(d,w)->{ composer.setText(text); sendOrStop(); }).show();
+            return;
+        }
         String id=null;
         try {
             id=graph.controller.reserve(session,text,tools);
