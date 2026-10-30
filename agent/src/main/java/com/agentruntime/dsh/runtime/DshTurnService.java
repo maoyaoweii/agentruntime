@@ -15,6 +15,7 @@ public final class DshTurnService extends Service {
     public static final String JOB="dsh_job",STOP="dsh_stop";
     private static final int NOTIFICATION=7801;
     private String owned;
+    private DshStatusOverlay overlay;
     @Override public IBinder onBind(Intent intent) { return null; }
     @Override public int onStartCommand(Intent intent,int flags,int startId) {
         DshController controller=AgentApp.get().dsh().controller;
@@ -40,7 +41,10 @@ public final class DshTurnService extends Service {
                     .setOngoing(true).setOnlyAlertOnce(true).build();
             if(Build.VERSION.SDK_INT>=34) startForeground(NOTIFICATION,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             else startForeground(NOTIFICATION,notification);
-            if(!controller.launch(id,()->{ owned=null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); })) {
+            // 悬浮状态卡：目标应用在前台时，用户仍然能看到进度，也能随时停止。
+            overlay=new DshStatusOverlay(this); overlay.show(active.session);
+            if(!controller.launch(id,()->{ if(overlay!=null) overlay.hide(); owned=null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); })) {
+                if(overlay!=null) overlay.hide();
                 owned=null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf();
             }
         } catch(RuntimeException e) {
@@ -53,6 +57,7 @@ public final class DshTurnService extends Service {
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
     }
     @Override public void onDestroy() {
+        if(overlay!=null) overlay.hide();
         if(owned!=null) AgentApp.get().dsh().controller.cancel(owned,"SERVICE_STOPPED");
         super.onDestroy();
     }

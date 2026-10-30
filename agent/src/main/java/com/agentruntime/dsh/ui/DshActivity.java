@@ -21,6 +21,7 @@ public final class DshActivity extends Activity {
     private String session;
     private boolean tools=true;
     private boolean a11yWarned=false;
+    private boolean overlayPrompted=false;
     private TextView subtitle,status;
     private Button connection;
     private EditText composer;
@@ -122,10 +123,27 @@ public final class DshActivity extends Activity {
                 requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},23);
             startForegroundService(new Intent(this,DshTurnService.class).putExtra(DshTurnService.JOB,id));
             composer.setText(""); saveDraft(); refresh();
+            // 操作别的应用时聊天必须让位，这之后进度与确认只能靠悬浮窗展示；
+            // 先把权限缺口讲清楚，别等确认弹窗弹不出来才归因到"没反应"。
+            if(tools&&!overlayPrompted&&!com.agentruntime.dsh.runtime.DshStatusOverlay.permitted(this)) {
+                overlayPrompted=true;
+                new android.app.AlertDialog.Builder(this).setTitle("允许悬浮窗，才能看到实时进度")
+                        .setMessage("操作微信、B站这类应用时，DSH 会把聊天退到后台——否则无障碍读到的只有 DSH 自己。\n\n"
+                                +"同时长按/点击聊天界面右侧的悬浮卡可以随时查看进度、停止任务；高风险操作的确认弹窗也需要这个权限才能浮在其他应用上显示。\n\n"
+                                +"现在不授权也能用，但过程中你看不到状态，确认请求会被自动拒绝。")
+                        .setPositiveButton("去授权",(d,w)->grantOverlay())
+                        .setNegativeButton("以后再说",null).show();
+            }
         } catch(Exception e) {
             if(id!=null) graph.controller.abandon(id);
             UiKit.toast(this,e instanceof IllegalArgumentException||e instanceof IllegalStateException?e.getMessage():"无法读取模型配置，请在设置中重新保存密钥");
         }
+    }
+    private void grantOverlay() {
+        try {
+            startActivity(new android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:"+getPackageName())));
+        } catch(Exception e) { UiKit.toast(this,"无法打开悬浮窗设置"); }
     }
     private void refresh() {
         if(graph==null||isDestroyed()) return;

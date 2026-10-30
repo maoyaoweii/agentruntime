@@ -120,6 +120,22 @@ public class ReadScreenToolResultTest {
     }
 
     @Test
+    public void swipeIsRefusedWhenOurOwnWindowIsInFront() throws Exception {
+        StateEngine state = new StateEngine();
+        state.rebuildSnapshot(RuntimeEnvironment.getApplication().getPackageName(),
+                "DSH", tree(), "n2", "test_fixture");
+
+        ExecResult result = executor(state).execute("swipe", "s5", "swipe",
+                new ActionSpec(ActionSpec.ActionType.SWIPE,
+                        new JSONObject().put("direction", "up"), 3000, 0,
+                        ActionSpec.RiskLevel.LOW, false, null),
+                Collections.emptyList());
+
+        // 真机上的"滑动已经生效"其实滑的是自己的聊天记录，这里必须拦住。
+        assertEquals("SELF_WINDOW_FOCUSED", result.code);
+    }
+
+    @Test
     public void readScreenSkillIsRegistered() throws Exception {
         SkillEngine skills = new SkillEngine(RuntimeEnvironment.getApplication());
 

@@ -135,6 +135,15 @@ public final class ActionExecutor {
             return r;
         }
 
+        // 屏幕类动作只对"别人的应用"有意义。聊天界面在前台时，滑动、坐标点击、找文字
+        // 全都作用在 DSH 自己身上——真机上表现为"滑动已经生效"，其实滑的是聊天气泡。
+        if (touchesScreen(spec.type) && isOwnWindow(before)) {
+            audit(taskId, actionId, "preflight", "accessibility", epoch, "SELF_WINDOW_FOCUSED", null);
+            return ExecResult.fail("SELF_WINDOW_FOCUSED",
+                    "当前前台是 DSH 自己（聊天界面），不是要操作的应用。"
+                            + "请先把目标应用切到前台；聊天让位后会自动重试成功。", epoch, elapsed(start));
+        }
+
         // 定位
         UiNode target = null;
         String locateInfo = null;
@@ -782,6 +791,26 @@ public final class ActionExecutor {
         }
         ExecResult result = accessibilityBridge.performInput(field, spec.param("text"), spec.timeoutMs);
         return result;
+    }
+
+    /** 这些动作都在"当前屏幕"上生效，前台是谁决定了它打到谁身上。 */
+    private static boolean touchesScreen(ActionSpec.ActionType type) {
+        switch (type) {
+            case TAP_TEXT: case READ_SCREEN: case SCREENSHOT: case VISUAL_TAP:
+            case TAP_XY: case SWIPE_XY: case LONG_PRESS_XY: case SWIPE:
+            case CLICK_NODE: case LONG_CLICK: case FIND_NODE: case READ_STATE:
+            case INPUT_TEXT: case INPUT_FOCUSED: case CLEAR_TEXT: case WAIT_FOR:
+            case SCROLL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean isOwnWindow(WorldState state) {
+        if (state == null || appContext == null) return false;
+        String own = appContext.getPackageName();
+        return own != null && own.equals(state.foregroundPackage);
     }
 
     private static String simpleClass(String className) {
