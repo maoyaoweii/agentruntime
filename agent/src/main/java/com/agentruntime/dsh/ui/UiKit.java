@@ -68,16 +68,17 @@ public final class UiKit {
         if(caption!=null) { content.addView(text(activity,caption,14,MUTED)); }
         gap(content,22); DshNavigation.Section section=DshNavigation.section(activity);
         if(section!=null) {
-            LinearLayout nav=DshNavigation.bar(activity,section); root.addView(nav);
+            boolean wide=DshNavigation.isWide(activity); View nav=DshNavigation.mount(activity,root,section);
             Runnable updateCompact=()->{
                 if(root.getHeight()==0) return;
-                boolean compact=root.getHeight()<dp(activity,300)&&root.findFocus() instanceof EditText;
+                boolean compact=!wide&&root.getHeight()<dp(activity,300)&&root.findFocus() instanceof EditText;
                 int visibility=compact?View.GONE:View.VISIBLE; if(nav.getVisibility()!=visibility) nav.setVisibility(visibility);
             };
             root.addOnLayoutChangeListener((view,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->updateCompact.run());
             root.getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus,newFocus)->updateCompact.run());
         }
-        activity.setContentView(root); return content;
+        else activity.setContentView(root);
+        return content;
     }
     public static EditText input(Context c,String hint,boolean multiline) {
         EditText v=new EditText(c); v.setTextSize(15); v.setTextColor(INK); v.setHintTextColor(MUTED); v.setHint(hint); v.setSingleLine(!multiline);

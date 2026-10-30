@@ -75,17 +75,17 @@ public final class DshActivity extends Activity {
         Button files=UiKit.tonalButton(this,"工作区",null,()->UiKit.open(this,WorkspaceActivity.class)); files.setTextColor(UiKit.INK); files.setTextSize(12);
         files.setCompoundDrawablesRelative(new DshIcons(this,DshIcons.Name.FOLDER,UiKit.MUTED,19,false),null,null,null); files.setCompoundDrawablePadding(UiKit.dp(this,8));
         LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1); fp.setMarginStart(UiKit.dp(this,8)); choices.addView(files,fp); composeCard.addView(choices); bottom.addView(composeCard); root.addView(bottom);
-        LinearLayout nav=DshNavigation.bar(this,DshNavigation.Section.CHAT); root.addView(nav);
+        boolean wide=DshNavigation.isWide(this); View nav=DshNavigation.mount(this,root,DshNavigation.Section.CHAT);
         Runnable updateCompact=()->{
             if(root.getHeight()==0) return;
             boolean compact=composer.hasFocus()&&root.getHeight()<UiKit.dp(this,360);
             int visibility=compact?View.GONE:View.VISIBLE;
-            if(nav.getVisibility()!=visibility) { nav.setVisibility(visibility); choices.setVisibility(visibility); top.setVisibility(visibility); connectionRow.setVisibility(visibility); }
+            setVisible(nav,wide?View.VISIBLE:visibility); setVisible(choices,visibility); setVisible(top,visibility); setVisible(connectionRow,visibility);
         };
         root.addOnLayoutChangeListener((view,left,topEdge,right,bottomEdge,oldLeft,oldTop,oldRight,oldBottom)->updateCompact.run());
         root.getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus,newFocus)->updateCompact.run());
-        setContentView(root);
     }
+    private static void setVisible(View view,int visibility) { if(view.getVisibility()!=visibility) view.setVisibility(visibility); }
     private void suggest(String text) { composer.setText(text); composer.setSelection(text.length()); composer.requestFocus(); }
     private void newSession() {
         saveDraft(); session=graph.sessions.createSession().id; composer.setText(""); renderer.reset(); refresh();

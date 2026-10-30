@@ -4,6 +4,8 @@ Android 独立助手：在手机上管理会话、调用模型、运行已启用
 
 预览版 2 根据 [四屏设计稿](design/dsh-mobile-ui-reference.png) 调整了对话、会话、插件和连接设置页面，统一图标与底部导航；设置中可临时显示自己输入的密钥，离开页面时会重新隐藏。
 
+交互设计也参考了 [ccch1mneyyy/dsh-go](https://github.com/ccch1mneyyy/dsh-go/tree/b96322910c9ebd1ae10ac89283ba1f28c3c904f2)：已结束轮次中的工具记录默认收起，点开可查看每一步与结果；横屏和平板宽窗口使用侧栏并限制内容宽度。
+
 这是本仓库的独立 Android 实现，参考 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/tree/f3803c96974ad4a94195fb97e5c637e9c2a3afe3) 的架构，不是 DeepSeek 官方客户端。桌面版 Node / Cordis 插件不能直接装进本应用。
 
 ## 安装与开始

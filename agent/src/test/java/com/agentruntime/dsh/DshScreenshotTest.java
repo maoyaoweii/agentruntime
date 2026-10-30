@@ -43,16 +43,19 @@ public final class DshScreenshotTest {
         com.agentruntime.dsh.store.SessionStore store=AgentApp.get().dsh().sessions;
         String chat=store.createSession().id;
         Intent intent=new Intent(RuntimeEnvironment.getApplication(),DshActivity.class).putExtra("session",chat);
-        try(ActivityController<DshActivity> screen=Robolectric.buildActivity(DshActivity.class,intent).setup()) { capture(screen.get(),"01-chat.png"); }
+        try(ActivityController<DshActivity> screen=Robolectric.buildActivity(DshActivity.class,intent).setup()) { capture(screen.get(),"01-chat.png",411,891); }
         store.delete(chat);
         for(String name:new String[]{"手机任务","旅行灵感","今日计划"}) store.rename(store.createSession().id,name);
-        try(ActivityController<SessionsActivity> screen=Robolectric.buildActivity(SessionsActivity.class).setup()) { capture(screen.get(),"02-sessions.png"); }
-        try(ActivityController<PluginsActivity> screen=Robolectric.buildActivity(PluginsActivity.class).setup()) { capture(screen.get(),"03-plugins.png"); }
-        try(ActivityController<DshSettingsActivity> screen=Robolectric.buildActivity(DshSettingsActivity.class).setup()) { capture(screen.get(),"04-settings.png"); }
+        try(ActivityController<SessionsActivity> screen=Robolectric.buildActivity(SessionsActivity.class).setup()) { capture(screen.get(),"02-sessions.png",411,891); }
+        try(ActivityController<PluginsActivity> screen=Robolectric.buildActivity(PluginsActivity.class).setup()) { capture(screen.get(),"03-plugins.png",411,891); }
+        try(ActivityController<DshSettingsActivity> screen=Robolectric.buildActivity(DshSettingsActivity.class).setup()) { capture(screen.get(),"04-settings.png",411,891); }
+        RuntimeEnvironment.setQualifiers("w891dp-h411dp-land-xxhdpi");
+        String landscape=store.createSession().id; Intent wide=new Intent(RuntimeEnvironment.getApplication(),DshActivity.class).putExtra("session",landscape);
+        try(ActivityController<DshActivity> screen=Robolectric.buildActivity(DshActivity.class,wide).setup()) { capture(screen.get(),"05-landscape.png",891,411); }
     }
-    private void capture(Activity activity,String name) throws Exception {
+    private void capture(Activity activity,String name,int widthDp,int heightDp) throws Exception {
         View root=((ViewGroup)activity.findViewById(android.R.id.content)).getChildAt(0);
-        int width=UiKit.dp(activity,411),height=UiKit.dp(activity,891);
+        int width=UiKit.dp(activity,widthDp),height=UiKit.dp(activity,heightDp);
         root.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));
         root.layout(0,0,width,height);
         Bitmap image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888); root.draw(new Canvas(image));

@@ -135,12 +135,22 @@ public class DshUiTest {
             DshActivity activity=controller.get(); View root=((ViewGroup)activity.findViewById(android.R.id.content)).getChildAt(0);
             EditText composer=activity.findViewById(R.id.dsh_composer); composer.setText("保持草稿"); composer.requestFocus();
             layout(root,UiKit.dp(activity,891),UiKit.dp(activity,240)); layout(root,UiKit.dp(activity,891),UiKit.dp(activity,240));
-            assertEquals(View.GONE,activity.findViewById(R.id.dsh_bottom_navigation).getVisibility());
+            assertEquals(View.VISIBLE,activity.findViewById(R.id.dsh_bottom_navigation).getVisibility());
             View send=activity.findViewById(R.id.dsh_send); int[] location=new int[2]; send.getLocationInWindow(location);
             assertTrue(location[1]>=0&&location[1]+send.getHeight()<=UiKit.dp(activity,240));
             root.requestFocus(); layout(root,UiKit.dp(activity,891),UiKit.dp(activity,411));
             assertEquals(View.VISIBLE,activity.findViewById(R.id.dsh_bottom_navigation).getVisibility());
             assertEquals("保持草稿",composer.getText().toString());
+        }
+    }
+    @Test @Config(qualifiers="w891dp-h411dp-land-xxhdpi") public void landscapeUsesAScrollableRailAndKeepsTheChatCentered() {
+        try(ActivityController<DshActivity> controller=Robolectric.buildActivity(DshActivity.class).setup()) {
+            DshActivity activity=controller.get(); View root=((ViewGroup)activity.findViewById(android.R.id.content)).getChildAt(0);
+            int width=UiKit.dp(activity,891),height=UiKit.dp(activity,411); layout(root,width,height);
+            View rail=activity.findViewById(R.id.dsh_bottom_navigation); assertTrue(rail instanceof android.widget.ScrollView);
+            assertEquals(UiKit.dp(activity,80),rail.getWidth()); assertEquals(height,rail.getHeight());
+            View composer=activity.findViewById(R.id.dsh_composer); int[] pos=new int[2]; composer.getLocationInWindow(pos);
+            assertTrue(pos[0]>=rail.getWidth()); assertTrue(pos[0]+composer.getWidth()<width);
         }
     }
     private static void layout(View root,int width,int height) {
@@ -156,9 +166,26 @@ public class DshUiTest {
         }
         android.content.Intent intent=new android.content.Intent(RuntimeEnvironment.getApplication(),DshActivity.class).putExtra("session",session);
         try(ActivityController<DshActivity> controller=Robolectric.buildActivity(DshActivity.class,intent).setup()) {
+            TextView summary=findText(controller.get().getWindow().getDecorView(),"1 项工具记录"); assertNotNull(summary); summary.performClick();
             TextView label=findText(controller.get().getWindow().getDecorView(),"◇  fixture"); assertNotNull(label); ((View)label.getParent()).performClick();
             android.app.AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog(); String details=allText(dialog.getWindow().getDecorView());
             assertTrue(details.contains("first-result")); assertFalse(details.contains("second-result"));
+        }
+    }
+    @Test public void completedToolsCollapseButFailuresAndDetailsRemainAccessible() throws Exception {
+        SessionStore store=AgentApp.get().dsh().sessions; String session=store.createSession().id,turn=store.beginTurn(session,"fixture","tools","fixture");
+        for(String id:new String[]{"ok","failed"}) {
+            store.append(session,turn,"tool_started",new JSONObject().put("id",id).put("name",id).put("arguments",new JSONObject()));
+            store.append(session,turn,"tool_result",new JSONObject().put("role","tool").put("tool_call_id",id).put("content",new JSONObject().put("ok",id.equals("ok")).put("code",id).toString()));
+        }
+        store.finish(session,turn,"completed","OK");
+        Intent intent=new Intent(RuntimeEnvironment.getApplication(),DshActivity.class).putExtra("session",session);
+        try(ActivityController<DshActivity> controller=Robolectric.buildActivity(DshActivity.class,intent).setup()) {
+            View root=controller.get().getWindow().getDecorView(); TextView summary=findText(root,"2 项工具记录 · 1 项未完成"); assertNotNull(summary);
+            TextView failed=findText(root,"◇  failed"); assertNotNull(failed); assertFalse(failed.isShown());
+            summary.performClick(); assertTrue(failed.isShown());
+            ((View)failed.getParent()).performClick();
+            assertTrue(allText(org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains("failed"));
         }
     }
     @Test public void exportRejectsFileUrisInsteadOfOverwritingPrivateFiles() throws Exception {

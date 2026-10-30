@@ -19,26 +19,42 @@ final class ChatRenderer {
     private String current="";
     private long sequence=-1;
     private TextView live;
+    private final Set<String> expandedGroups=new HashSet<>();
     ChatRenderer(Activity activity,LinearLayout content,ScrollView scroll,Consumer<String> suggest) {
         this.activity=activity; this.content=content; this.scroll=scroll; this.suggest=suggest;
     }
-    void reset() { sequence=-1; current=""; }
+    void reset() { sequence=-1; current=""; expandedGroups.clear(); }
     void toBottom() { scroll.post(()->scroll.fullScroll(View.FOCUS_DOWN)); }
     void show(String session,List<SessionStore.Event> events,DshController.View active) throws Exception {
         boolean follow=scroll.getChildCount()==0||scroll.getChildAt(0).getHeight()-scroll.getHeight()-scroll.getScrollY()<UiKit.dp(activity,120);
         long last=events.isEmpty()?0:events.get(events.size()-1).sequence;
         if(!current.equals(session)||last!=sequence) {
+            if(!current.equals(session)) expandedGroups.clear();
             current=session; sequence=last; content.removeAllViews(); live=null;
             if(events.isEmpty()) welcome();
             Map<String,JSONObject> results=new HashMap<>();
+            Set<String> settledTurns=new HashSet<>();
             for(SessionStore.Event event:events) if("tool_result".equals(event.type)) results.put(event.turnId+":"+event.payload.optString("tool_call_id"),new JSONObject(event.payload.optString("content","{}")));
-            for(SessionStore.Event event:events) {
+            for(SessionStore.Event event:events) if("turn_finished".equals(event.type)) settledTurns.add(event.turnId);
+            for(int i=0;i<events.size();i++) {
+                SessionStore.Event event=events.get(i);
                 JSONObject data=event.payload;
                 if("user_message".equals(event.type)) bubble(data.optString("content"),true);
                 else if("assistant_message".equals(event.type)) {
                     String text=data.optString("content",""); if(!text.startsWith("[DSH Runtime]")&&!text.isEmpty()) bubble(text,false);
                 } else if("assistant_attempt".equals(event.type)) { bubble(data.optString("content"),false); note("以上回复未完成",0xffa46516); }
-                else if("tool_started".equals(event.type)) tool(data,results.get(event.turnId+":"+data.optString("id")));
+                else if("tool_started".equals(event.type)) {
+                    if(settledTurns.contains(event.turnId)) {
+                        List<SessionStore.Event> group=new ArrayList<>(); int next=i;
+                        while(next<events.size()) {
+                            SessionStore.Event part=events.get(next); if(!event.turnId.equals(part.turnId)) break;
+                            if("tool_started".equals(part.type)) group.add(part);
+                            else if(!"tool_result".equals(part.type)&&!("assistant_message".equals(part.type)&&part.payload.optString("content","").isEmpty())) break;
+                            next++;
+                        }
+                        toolGroup(group,results); i=next-1;
+                    } else tool(content,data,results.get(event.turnId+":"+data.optString("id")));
+                }
                 else if("turn_finished".equals(event.type)&&!"completed".equals(data.optString("state"))) note(explain(data.optString("code")),0xffa46516);
             }
             live=UiKit.text(activity,"",15,UiKit.INK); live.setTextIsSelectable(true); UiKit.pad(live,4,10,4,10); content.addView(live);
@@ -70,7 +86,28 @@ final class ChatRenderer {
         TextView text=UiKit.text(activity,UiKit.visible(value),16,UiKit.INK); text.setTextIsSelectable(true); text.setLineSpacing(UiKit.dp(activity,5),1); wrapper.addView(text);
         LinearLayout.LayoutParams p=UiKit.matchWrap(); p.bottomMargin=UiKit.dp(activity,14); if(user) p.setMarginStart(UiKit.dp(activity,28)); else p.setMarginEnd(UiKit.dp(activity,12)); content.addView(wrapper,p);
     }
-    private void tool(JSONObject started,JSONObject result) {
+    private void toolGroup(List<SessionStore.Event> events,Map<String,JSONObject> results) {
+        String key=events.get(0).turnId+":"+events.get(0).sequence; int incomplete=0;
+        for(SessionStore.Event event:events) {
+            JSONObject result=results.get(event.turnId+":"+event.payload.optString("id"));
+            if(result==null||!result.optBoolean("ok")) incomplete++;
+        }
+        String label=events.size()+" 项工具记录"+(incomplete>0?" · "+incomplete+" 项未完成":"");
+        LinearLayout group=UiKit.column(activity),details=UiKit.column(activity); details.setVisibility(expandedGroups.contains(key)?View.VISIBLE:View.GONE);
+        Button toggle=UiKit.button(activity,label,false,()->{}); toggle.setTextSize(12); toggle.setTextColor(incomplete>0?0xff8e5a16:UiKit.MUTED); toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
+        toggle.setCompoundDrawablesRelative(new DshIcons(activity,DshIcons.Name.GRID,UiKit.MUTED,17,false),null,new DshIcons(activity,DshIcons.Name.DOWN,UiKit.MUTED,18,false),null);
+        toggle.setCompoundDrawablePadding(UiKit.dp(activity,8));
+        toggle.setContentDescription(label+(details.getVisibility()==View.VISIBLE?"，已展开":"，点击展开"));
+        toggle.setOnClickListener(view->{
+            boolean expand=details.getVisibility()!=View.VISIBLE; details.setVisibility(expand?View.VISIBLE:View.GONE);
+            if(expand) expandedGroups.add(key); else expandedGroups.remove(key);
+            toggle.setContentDescription(label+(expand?"，已展开":"，点击展开"));
+        });
+        group.addView(toggle,UiKit.matchWrap()); UiKit.gap(group,8);
+        for(SessionStore.Event event:events) tool(details,event.payload,results.get(event.turnId+":"+event.payload.optString("id")));
+        group.addView(details); LinearLayout.LayoutParams p=UiKit.matchWrap(); p.bottomMargin=UiKit.dp(activity,8); content.addView(group,p);
+    }
+    private void tool(LinearLayout target,JSONObject started,JSONObject result) {
         String name=started.optString("name"); String label=result==null?"调用中":result.optBoolean("ok")?"已完成":"未完成";
         LinearLayout card=UiKit.row(activity); UiKit.pad(card,14,13,14,13); card.setBackground(UiKit.shape(activity,0xfff0f3fa,0,14));
         TextView text=UiKit.bold(activity,"◇  "+name,12,UiKit.INK); card.addView(text,new LinearLayout.LayoutParams(0,-2,1));
@@ -82,7 +119,7 @@ final class ChatRenderer {
                 new AlertDialog.Builder(activity).setTitle(name).setView(scrollView).setPositiveButton("关闭",null).show();
             } catch(Exception ignored) { UiKit.toast(activity,"暂时无法读取工具详情"); }
         });
-        LinearLayout.LayoutParams p=UiKit.matchWrap(); p.bottomMargin=UiKit.dp(activity,10); content.addView(card,p);
+        LinearLayout.LayoutParams p=UiKit.matchWrap(); p.bottomMargin=UiKit.dp(activity,10); target.addView(card,p);
     }
     private void note(String text,int color) { TextView view=UiKit.text(activity,text,12,color); UiKit.pad(view,4,4,4,16); content.addView(view); }
     static String explain(String code) {
