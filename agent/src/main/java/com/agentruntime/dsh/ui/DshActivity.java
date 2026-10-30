@@ -40,6 +40,7 @@ public final class DshActivity extends Activity {
         else composer.setText(getPreferences(0).getString("draft_"+session,""));
     }
     private void build() {
+        boolean wide=DshNavigation.isWide(this);
         LinearLayout root=UiKit.column(this); root.setBackgroundColor(UiKit.BG);
         root.setFocusableInTouchMode(true); root.requestFocus();
         LinearLayout top=UiKit.row(this); UiKit.pad(top,20,12,16,6);
@@ -55,7 +56,7 @@ public final class DshActivity extends Activity {
         connection.setCompoundDrawablePadding(UiKit.dp(this,6)); connection.setBackground(UiKit.ripple(this,UiKit.WHITE,UiKit.LINE,24));
         connectionRow.addView(connection,new LinearLayout.LayoutParams(-2,UiKit.dp(this,48))); root.addView(connectionRow);
         status=UiKit.text(this,"",12,UiKit.MUTED); status.setId(com.agentruntime.agent.R.id.dsh_status); UiKit.pad(status,22,2,22,6); status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); root.addView(status);
-        ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false); UiKit.pad(scroll,20,4,20,8);
+        ScrollView scroll=new ScrollView(this); scroll.setId(com.agentruntime.agent.R.id.dsh_transcript); scroll.setFillViewport(true); scroll.setClipToPadding(false); UiKit.pad(scroll,20,4,20,8);
         LinearLayout transcript=UiKit.column(this); scroll.addView(transcript,new ScrollView.LayoutParams(-1,-2)); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         renderer=new ChatRenderer(this,transcript,scroll,this::suggest);
         LinearLayout bottom=UiKit.column(this); UiKit.pad(bottom,16,6,16,5); bottom.setBackgroundColor(UiKit.BG);
@@ -67,15 +68,22 @@ public final class DshActivity extends Activity {
         composer.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         composer.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(SessionStore.MAX_INPUT)});
         compose.addView(composer,new LinearLayout.LayoutParams(0,-2,1)); send=UiKit.button(this,"发送",true,this::sendOrStop); send.setId(com.agentruntime.agent.R.id.dsh_send);
-        LinearLayout.LayoutParams sendParams=new LinearLayout.LayoutParams(UiKit.dp(this,68),UiKit.dp(this,50)); sendParams.setMarginStart(UiKit.dp(this,7)); compose.addView(send,sendParams); composeCard.addView(compose);
-        LinearLayout choices=UiKit.row(this); UiKit.gap(composeCard,8);
-        mode=UiKit.tonalButton(this,"手机助手",null,()->{ tools=!tools; refresh(); }); mode.setTextSize(12);
-        mode.setCompoundDrawablesRelative(new DshIcons(this,DshIcons.Name.PHONE,UiKit.LINK,19,false),null,null,null); mode.setCompoundDrawablePadding(UiKit.dp(this,8));
-        choices.addView(mode,new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1));
+        LinearLayout.LayoutParams sendParams=new LinearLayout.LayoutParams(UiKit.dp(this,68),UiKit.dp(this,50)); sendParams.setMarginStart(UiKit.dp(this,7));
+        LinearLayout choices=UiKit.row(this);
+        mode=UiKit.tonalButton(this,"手机助手",null,()->{ tools=!tools; refresh(); }); mode.setId(com.agentruntime.agent.R.id.dsh_mode); mode.setTextSize(12);
         Button files=UiKit.tonalButton(this,"工作区",null,()->UiKit.open(this,WorkspaceActivity.class)); files.setTextColor(UiKit.INK); files.setTextSize(12);
-        files.setCompoundDrawablesRelative(new DshIcons(this,DshIcons.Name.FOLDER,UiKit.MUTED,19,false),null,null,null); files.setCompoundDrawablePadding(UiKit.dp(this,8));
-        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1); fp.setMarginStart(UiKit.dp(this,8)); choices.addView(files,fp); composeCard.addView(choices); bottom.addView(composeCard); root.addView(bottom);
-        boolean wide=DshNavigation.isWide(this); View nav=DshNavigation.mount(this,root,DshNavigation.Section.CHAT);
+        files.setId(com.agentruntime.agent.R.id.dsh_workspace_shortcut); files.setContentDescription("工作区"); UiKit.iconLabel(files,"工作区",DshIcons.Name.FOLDER,UiKit.MUTED,19);
+        if(wide) {
+            LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(UiKit.dp(this,112),UiKit.dp(this,48)); mp.setMarginStart(UiKit.dp(this,7)); compose.addView(mode,mp);
+            LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(UiKit.dp(this,96),UiKit.dp(this,48)); fp.setMarginStart(UiKit.dp(this,7)); compose.addView(files,fp);
+            compose.addView(send,sendParams); composeCard.addView(compose);
+        } else {
+            compose.addView(send,sendParams); composeCard.addView(compose); UiKit.gap(composeCard,8);
+            choices.addView(mode,new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1));
+            LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,UiKit.dp(this,48),1); fp.setMarginStart(UiKit.dp(this,8)); choices.addView(files,fp); composeCard.addView(choices);
+        }
+        bottom.addView(composeCard); root.addView(bottom);
+        View nav=DshNavigation.mount(this,root,DshNavigation.Section.CHAT);
         Runnable updateCompact=()->{
             if(root.getHeight()==0) return;
             boolean compact=composer.hasFocus()&&root.getHeight()<UiKit.dp(this,360);
@@ -118,7 +126,8 @@ public final class DshActivity extends Activity {
         connection.setCompoundDrawablesRelative(dot,null,new DshIcons(this,DshIcons.Name.RIGHT,UiKit.MUTED,15,false),null);
         String message=running?(active.session.equals(session)?active.status:"另一对话正在运行，可停止后再发送"):graph.controller.lastError();
         status.setText(message); status.setVisibility(message.isEmpty()?View.GONE:View.VISIBLE);
-        send.setText(running?"停止":"发送"); mode.setText(tools?"手机助手":"纯对话"); mode.setTextColor(tools?UiKit.LINK:UiKit.MUTED); mode.setEnabled(!running);
+        send.setText(running?"停止":"发送"); String modeLabel=tools?"手机助手":"纯对话"; int modeColor=tools?UiKit.LINK:UiKit.MUTED;
+        UiKit.iconLabel(mode,modeLabel,DshIcons.Name.PHONE,modeColor,19); mode.setTextColor(modeColor); mode.setEnabled(!running);
         mode.setContentDescription(tools?"手机助手模式，点击切换到纯对话":"纯对话模式，点击切换到手机助手");
         try { renderer.show(session,graph.sessions.events(session),active!=null&&active.session.equals(session)?active:null); }
         catch(Exception e) { status.setText("读取会话失败，请重新打开应用"); status.setVisibility(View.VISIBLE); }

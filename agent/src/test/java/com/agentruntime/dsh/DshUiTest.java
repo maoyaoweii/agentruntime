@@ -153,6 +153,17 @@ public class DshUiTest {
             assertTrue(pos[0]>=rail.getWidth()); assertTrue(pos[0]+composer.getWidth()<width);
         }
     }
+    @Test @Config(qualifiers="w891dp-h411dp-land-xxhdpi") public void freshWideConversationStartsAtTheWelcomeTop() {
+        String session=AgentApp.get().dsh().sessions.createSession().id;
+        Intent intent=new Intent(RuntimeEnvironment.getApplication(),DshActivity.class).putExtra("session",session);
+        try(ActivityController<DshActivity> controller=Robolectric.buildActivity(DshActivity.class,intent).setup()) {
+            DshActivity activity=controller.get(); View root=((ViewGroup)activity.findViewById(android.R.id.content)).getChildAt(0);
+            layout(root,UiKit.dp(activity,891),UiKit.dp(activity,411)); Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            android.widget.ScrollView scroll=activity.findViewById(R.id.dsh_transcript); assertEquals(0,scroll.getScrollY());
+            TextView title=findText(root,"你好，\n今天想做些什么？"),shortcut=findText(root,"发现手机技能"); assertNotNull(title); assertNotNull(shortcut);
+            int[] titleAt=new int[2],shortcutAt=new int[2]; title.getLocationInWindow(titleAt); shortcut.getLocationInWindow(shortcutAt); assertTrue(shortcutAt[0]>titleAt[0]);
+        }
+    }
     private static void layout(View root,int width,int height) {
         root.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY)); root.layout(0,0,width,height);
     }
@@ -186,6 +197,24 @@ public class DshUiTest {
             summary.performClick(); assertTrue(failed.isShown());
             ((View)failed.getParent()).performClick();
             assertTrue(allText(org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains("failed"));
+        }
+    }
+    @Test public void interruptedQueuedToolStillShowsItsUnknownOutcome() throws Exception {
+        SessionStore store=AgentApp.get().dsh().sessions; String session=store.createSession().id,turn=store.beginTurn(session,"fixture","tools","fixture");
+        org.json.JSONArray calls=new org.json.JSONArray();
+        for(String id:new String[]{"first","queued"}) calls.put(new JSONObject().put("id",id).put("type","function")
+                .put("function",new JSONObject().put("name",id).put("arguments","{}")));
+        store.append(session,turn,"assistant_message",new JSONObject().put("role","assistant").put("content","").put("tool_calls",calls));
+        store.append(session,turn,"tool_started",new JSONObject().put("id","first").put("name","first").put("arguments",new JSONObject()));
+        store.append(session,turn,"tool_result",new JSONObject().put("role","tool").put("tool_call_id","first").put("content",new JSONObject().put("ok",true).toString()));
+        store.finish(session,turn,"cancelled","USER_CANCELLED");
+        Intent intent=new Intent(RuntimeEnvironment.getApplication(),DshActivity.class).putExtra("session",session);
+        try(ActivityController<DshActivity> controller=Robolectric.buildActivity(DshActivity.class,intent).setup()) {
+            View root=controller.get().getWindow().getDecorView(); TextView summary=findText(root,"2 项工具记录 · 1 项结果未知"); assertNotNull(summary); summary.performClick();
+            TextView queued=findText(root,"◇  queued"); assertNotNull(queued); assertTrue(queued.isShown());
+            View card=(View)queued.getParent(); assertTrue(card.getContentDescription().toString().contains("结果未知")); card.performClick();
+            String details=allText(org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView());
+            assertTrue(details.contains("queued")); assertTrue(details.contains("RESULT_UNAVAILABLE")); assertTrue(details.contains("操作可能已生效"));
         }
     }
     @Test public void exportRejectsFileUrisInsteadOfOverwritingPrivateFiles() throws Exception {

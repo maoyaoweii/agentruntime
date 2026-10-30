@@ -2,6 +2,9 @@
 <resources>
     <item name="dsh_composer" type="id" />
     <item name="dsh_send" type="id" />
+    <item name="dsh_transcript" type="id" />
+    <item name="dsh_mode" type="id" />
+    <item name="dsh_workspace_shortcut" type="id" />
     <item name="dsh_bottom_navigation" type="id" />
     <item name="dsh_tab_chat" type="id" />
     <item name="dsh_tab_sessions" type="id" />

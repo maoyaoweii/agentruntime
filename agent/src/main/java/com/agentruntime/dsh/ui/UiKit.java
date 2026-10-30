@@ -44,6 +44,11 @@ public final class UiKit {
         Button v=button(c,label,false,action); v.setTextColor(LINK); v.setTextSize(13); v.setBackground(ripple(c,0xfff1f5ff,0,12));
         if(icon!=null) v.setCompoundDrawablesRelative(null,null,new DshIcons(c,icon,LINK,17,false),null); v.setCompoundDrawablePadding(dp(c,7)); return v;
     }
+    public static void iconLabel(Button button,String label,DshIcons.Name icon,int color,int size) {
+        android.text.SpannableString text=new android.text.SpannableString("\ufffc  "+label);
+        text.setSpan(new android.text.style.ImageSpan(new DshIcons(button.getContext(),icon,color,size,false),android.text.style.ImageSpan.ALIGN_BOTTOM),0,1,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        button.setText(text);
+    }
     public static Switch toggle(Context c,String label,boolean checked) {
         Switch v=new Switch(c); v.setContentDescription(label); v.setChecked(checked); v.setShowText(false); v.setSplitTrack(false); v.setMinHeight(dp(c,48)); v.setMinimumWidth(dp(c,48));
         v.setThumbTintList(ColorStateList.valueOf(WHITE)); v.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{BLUE,0xffcfd5e3})); return v;

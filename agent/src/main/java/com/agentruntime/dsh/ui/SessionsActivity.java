@@ -21,7 +21,7 @@ public final class SessionsActivity extends Activity {
     private void render() {
         LinearLayout page=UiKit.page(this,"你的会话","随时回来继续");
         Button create=UiKit.button(this,"开始新对话",true,()->open(graph.sessions.createSession().id));
-        create.setCompoundDrawablesRelative(new DshIcons(this,DshIcons.Name.PLUS,UiKit.WHITE,20,false),null,null,null); create.setCompoundDrawablePadding(UiKit.dp(this,8));
+        UiKit.iconLabel(create,"开始新对话",DshIcons.Name.PLUS,UiKit.WHITE,20); create.setContentDescription("开始新对话");
         page.addView(create,UiKit.matchWrap()); UiKit.gap(page,18);
         for(SessionStore.Session session:graph.sessions.sessions()) {
             LinearLayout card=UiKit.card(this); UiKit.pad(card,14,12,14,12);
