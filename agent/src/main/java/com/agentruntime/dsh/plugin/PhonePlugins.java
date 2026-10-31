@@ -43,10 +43,20 @@ public final class PhonePlugins {
                             // 跨应用动作开始前先把聊天退到后台，把前台让给真正要操作的应用。
                             if(!KEEP_FOREGROUND.contains(skill)) com.agentruntime.ui.AppWindow.yieldDevice(450);
                             AgentRuntime.TaskResult result=TaskRunner.runSkill(skill,args.getJSONObject("args"),false,token.flag);
-                            return new JSONObject().put("ok","SUCCESS".equals(result.status)).put("code",result.status)
+                            return new JSONObject().put("ok","SUCCESS".equals(result.status)).put("code",outcomeCode(result))
                                     .put("output",observations(result.detail)).put("data",result.detail);
                         }));
         return Arrays.asList(device,new Workspace(new java.io.File(app.getFilesDir(),"dsh-workspace")),skills);
+    }
+
+    static String outcomeCode(AgentRuntime.TaskResult result) {
+        if("SUCCESS".equals(result.status)) return result.status;
+        JSONArray steps=result.detail.optJSONArray("steps");
+        if(steps!=null) for(int i=0;i<steps.length();i++) {
+            JSONObject step=steps.optJSONObject(i);
+            if(step!=null&&"RISK_REJECTED".equals(step.optString("code"))) return "CONFIRMATION_NOT_OBTAINED";
+        }
+        return result.status;
     }
 
     /**

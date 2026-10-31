@@ -25,17 +25,17 @@ public final class DshController {
     public static final int MAX_ROUNDS=3;
 
     private static final class Job {
-        final String id=UUID.randomUUID().toString(),session,text,turn,goal;
+        final String id=UUID.randomUUID().toString(),session,text,turn,goal,rootId;
         final boolean tools;
         final int round;
         final ProviderConfig.Snapshot provider;
         final PluginRegistry.Snapshot plugins;
         final Cancellation cancellation=new Cancellation(300000);
         final StringBuilder live=new StringBuilder();
-        String status="准备开始…"; boolean started;
-        Job(String session,String text,boolean tools,ProviderConfig.Snapshot provider,PluginRegistry.Snapshot plugins,String turn,int round,String goal) {
+        String status="准备开始…"; boolean started,stopRequested;
+        Job(String session,String text,boolean tools,ProviderConfig.Snapshot provider,PluginRegistry.Snapshot plugins,String turn,int round,String goal,String rootId) {
             this.session=session; this.text=text; this.tools=tools; this.provider=provider; this.plugins=plugins; this.turn=turn;
-            this.round=round; this.goal=goal;
+            this.round=round; this.goal=goal; this.rootId=rootId==null?id:rootId;
         }
     }
     private final AgentApp app;
@@ -66,7 +66,7 @@ public final class DshController {
         ProviderConfig.Snapshot settings=provider.snapshot(); PluginRegistry.Snapshot admitted=plugins.snapshot(tools);
         // Persist the user's message before the UI clears its draft or asks Android to start a service.
         String turn=store.beginTurn(session,text.trim(),tools?"tools":"chat",settings.model);
-        active=new Job(session,text.trim(),tools,settings,admitted,turn,0,text.trim()); lastJob=active; lastError="";
+        active=new Job(session,text.trim(),tools,settings,admitted,turn,0,text.trim(),null); lastJob=active; lastError="";
         changed(); return active.id;
     }
     public synchronized void abandon(String id) {
@@ -112,6 +112,7 @@ public final class DshController {
     public synchronized String continuationFor(String finishedId) {
         Job prev=lastJob;
         if(prev==null||!prev.id.equals(finishedId)) return null;
+        if(prev.stopRequested) return null;
         if(prev.round>=MAX_ROUNDS) return null;
         // 用户主动停止（或插件被停用、服务被杀）一律不再续；只有"预算用尽"才续。
         boolean timeout="TURN_TIMEOUT".equals(prev.cancellation.reason());
@@ -120,22 +121,30 @@ public final class DshController {
         String code=store.turnCode(prev.turn);
         boolean budget=("failed".equals(state)&&("MODEL_STEP_LIMIT".equals(code)||"TOOL_LIMIT".equals(code)))
                 ||("cancelled".equals(state)&&"TURN_TIMEOUT".equals(code));
-        if(!budget) return null;
+        if(!budget||store.hasUnsafeToolOutcome(prev.session,prev.turn)) return null;
         try {
             ProviderConfig.Snapshot settings=provider.snapshot();
             PluginRegistry.Snapshot admitted=plugins.snapshot(prev.tools);
-            String text="[DSH Runtime] 上一轮因为工具预算用完被中断，目标还没完成，请接着做。\n"
-                    +"目标：" + prev.goal + "\n"
-                    +"要求：先读屏确认当前界面，不要重复已经成功的步骤；不要重述已完成的部分；"
+            String prefix="[DSH Runtime] 上一轮因为工具预算用完被中断，目标还没完成，请接着做。\n目标：";
+            String suffix="\n要求：先读屏确认当前界面，不要重复已经成功的步骤；不要重述已完成的部分；"
                     +"如果连续两次尝试都失败，换一种路径（换技能、换入口、先回桌面再进）；"
                     +"确实做不到时，说清楚缺哪项能力、你试过什么，再结束。";
+            String goal=prev.goal,marker="…（完整目标见上一轮消息）";
+            int maxGoal=SessionStore.MAX_INPUT-prefix.length()-suffix.length();
+            if(goal.length()>maxGoal) {
+                int end=maxGoal-marker.length();
+                if(end>0&&Character.isHighSurrogate(goal.charAt(end-1))) end--;
+                goal=goal.substring(0,Math.max(0,end))+marker;
+            }
+            String text=prefix+goal+suffix;
             String turn=store.beginTurn(prev.session,text,prev.tools?"tools":"chat",settings.model);
-            Job next=new Job(prev.session,text,prev.tools,settings,admitted,turn,prev.round+1,prev.goal);
+            Job next=new Job(prev.session,text,prev.tools,settings,admitted,turn,prev.round+1,prev.goal,prev.rootId);
             active=next; lastJob=next;
             store.markContinued(prev.session,prev.turn,next.id);
             changed();
             return next.id;
         } catch(Exception e) {
+            lastError="无法自动继续上一轮任务，请检查模型设置和会话后重试。"; changed();
             return null;
         }
     }
@@ -143,8 +152,10 @@ public final class DshController {
     public void cancel(String id,String reason) {
         Job job;
         synchronized(this) {
-            if(active==null||!active.id.equals(id)) return;
-            job=active; job.status="正在停止…"; job.cancellation.cancel(reason); changed();
+            job=active!=null?active:lastJob;
+            if(job==null||(!job.id.equals(id)&&("TURN_TIMEOUT".equals(reason)||!job.rootId.equals(id)))) return;
+            if(!"TURN_TIMEOUT".equals(reason)) job.stopRequested=true;
+            job.status="正在停止…"; job.cancellation.cancel(reason); changed();
         }
         TaskRunner.cancel(job.cancellation.flag);
         app.confirmations().cancelPending(job.cancellation.flag);

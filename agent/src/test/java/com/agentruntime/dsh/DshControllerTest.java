@@ -54,6 +54,19 @@ public class DshControllerTest {
         }
     }
 
+    @Test public void maximumLengthGoalCanStillBeAutomaticallyContinued() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String goal="a".repeat(SessionStore.MAX_INPUT); String id=controller.reserve(session,goal,true);
+            store.finish(session,latestTurn(store,session),"failed","MODEL_STEP_LIMIT");
+            assertNotNull(controller.continuationFor(id));
+            String next=store.events(session).stream().filter(e->e.type.equals("user_message"))
+                    .reduce((a,b)->b).get().payload.getString("content");
+            assertTrue(next.length()<=SessionStore.MAX_INPUT); assertTrue(next.contains("完整目标"));
+            assertEquals(goal,store.history(session,96000).getJSONObject(0).getString("content"));
+        }
+    }
+
     @Test public void completedTurnsAreNeverContinued() throws Exception {
         try(SessionStore store=new SessionStore(AgentApp.get())) {
             DshController controller=controller(store); String session=store.createSession().id;
@@ -81,6 +94,55 @@ public class DshControllerTest {
             controller.cancel(id,"TURN_TIMEOUT");
             store.finish(session,latestTurn(store,session),"cancelled","TURN_TIMEOUT");
             assertNotNull(controller.continuationFor(id));
+        }
+    }
+
+    @Test public void originalStopButtonStillStopsAnAutomaticallyContinuedTurn() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String original=controller.reserve(session,"长任务",true);
+            store.finish(session,latestTurn(store,session),"failed","MODEL_STEP_LIMIT");
+            String next=controller.continuationFor(original); assertNotNull(next); assertNotEquals(original,next);
+            controller.cancel(original,"USER_CANCELLED");
+            assertEquals("正在停止…",controller.active().status);
+            store.finish(session,latestTurn(store,session),"failed","MODEL_STEP_LIMIT");
+            assertNull(controller.continuationFor(next));
+        }
+    }
+
+    @Test public void userStopAfterTimeoutAlwaysOverridesAutomaticContinuation() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String id=controller.reserve(session,"长任务",true);
+            controller.cancel(id,"TURN_TIMEOUT"); controller.cancel(id,"USER_CANCELLED");
+            store.finish(session,latestTurn(store,session),"cancelled","TURN_TIMEOUT");
+            assertNull(controller.continuationFor(id));
+        }
+    }
+
+    @Test public void previousRoundTimeoutCannotCancelTheNewRound() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String original=controller.reserve(session,"长任务",true);
+            store.finish(session,latestTurn(store,session),"failed","MODEL_STEP_LIMIT");
+            String next=controller.continuationFor(original); assertNotNull(next);
+            controller.cancel(original,"TURN_TIMEOUT");
+            assertNotEquals("正在停止…",controller.active().status);
+            store.finish(session,latestTurn(store,session),"failed","MODEL_STEP_LIMIT");
+            assertNotNull(controller.continuationFor(next));
+        }
+    }
+
+    @Test public void unknownInterruptedToolOutcomeDoesNotAutomaticallyContinue() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String id=controller.reserve(session,"执行手机任务",true),turn=latestTurn(store,session);
+            org.json.JSONArray calls=new org.json.JSONArray().put(new JSONObject().put("id","call_0").put("type","function")
+                    .put("function",new JSONObject().put("name","run_skill").put("arguments","{}")));
+            store.append(session,turn,"assistant_message",new JSONObject().put("role","assistant").put("content","").put("tool_calls",calls));
+            store.append(session,turn,"tool_started",new JSONObject().put("id","call_0").put("name","run_skill").put("arguments",new JSONObject()));
+            controller.cancel(id,"TURN_TIMEOUT"); store.finish(session,turn,"cancelled","TURN_TIMEOUT");
+            assertNull(controller.continuationFor(id));
         }
     }
 

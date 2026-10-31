@@ -49,6 +49,10 @@ public final class AccessibilityBridge implements DeviceBridge {
 
     @Override
     public ExecResult performClick(UiNode target, long timeoutMs) {
+        return performClick(target,timeoutMs,null);
+    }
+
+    public ExecResult performClick(UiNode target,long timeoutMs,String expectedPackage) {
         long start = System.currentTimeMillis();
         if (target == null) {
             return ExecResult.fail("NODE_NOT_FOUND", "null target", epoch(), elapsed(start));
@@ -59,7 +63,7 @@ public final class AccessibilityBridge implements DeviceBridge {
                     epoch(), elapsed(start));
         }
         AgentAccessibilityService svc = AgentAccessibilityService.getInstance();
-        boolean ok = svc != null && svc.click(target);
+        boolean ok = svc != null && svc.click(target, expectedPackage);
         if (!ok) {
             // 目标本身不可点时，服务已尝试父链兜底；仍失败才判定不可交互。
             return target.clickable

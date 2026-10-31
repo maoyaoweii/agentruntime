@@ -311,7 +311,7 @@ public final class ActionExecutor {
                 break;
             }
             case TAP_TEXT: {
-                result = tapText(spec, cancelRequested, taskDeadlineMs, epoch, start);
+                result = tapText(taskId, actionId, spec, cancelRequested, taskDeadlineMs, epoch, start);
                 break;
             }
             case SWIPE: {
@@ -905,7 +905,7 @@ public final class ActionExecutor {
      * <p>匹配顺序：精确文本可点击 → 包含文本可点击 → 精确文本 → 包含文本；
      * 命中的若是不可点击的文本节点，改点"包含该节点且面积最小的可点击祖先"。
      */
-    private ExecResult tapText(ActionSpec spec, AtomicBoolean cancelRequested,
+    private ExecResult tapText(String taskId, String actionId, ActionSpec spec, AtomicBoolean cancelRequested,
                                long taskDeadlineMs, long epoch, long start) {
         String query = spec.param("text");
         if (query == null || query.trim().isEmpty()) {
@@ -934,6 +934,9 @@ public final class ActionExecutor {
                         "accessibility root unavailable (service bound but no window tree);"
                                 + " rebind accessibility service", epoch, elapsed(start));
             }
+            if (state.foregroundPackage == null || state.foregroundPackage.trim().isEmpty()) {
+                return ExecResult.fail("A11Y_ROOT_UNAVAILABLE", "无法确认当前前台应用，已停止点击。", epoch, elapsed(start));
+            }
             String own = appContext == null ? null : appContext.getPackageName();
             if (own != null && own.equals(state.foregroundPackage)) {
                 // 在自己的聊天界面里找"热门"，命中的是气泡文字，点了必然不可交互。
@@ -947,7 +950,36 @@ public final class ActionExecutor {
                     + " nodes=" + (state == null || state.root == null ? 0 : state.root.flat().size())
                     + " hit=" + (node == null ? "-" : node.nodeId));
             if (node != null) {
-                ExecResult r = accessibilityBridge.performClick(node, spec.timeoutMs);
+                String sensitive = sensitiveTapLabel(query, node);
+                if (sensitive != null) {
+                    String summary = "当前应用：" + confirmationValue(String.valueOf(state.foregroundPackage))
+                            + "\n即将点击：" + confirmationValue(sensitive);
+                    RiskGate.Decision decision = riskGate.confirmSensitiveTap(actionId, summary);
+                    if (!decision.allow) {
+                        audit(taskId, actionId, "risk_gate", "none", epoch, "REJECTED_" + decision.reason, null);
+                        return ExecResult.reject("RISK_REJECTED", decision.reason, epoch);
+                    }
+                    if (cancelRequested != null && cancelRequested.get()) {
+                        return ExecResult.cancelled("USER_CANCEL", "cancel requested before click", epoch);
+                    }
+                    if (System.currentTimeMillis() >= taskDeadlineMs) {
+                        return ExecResult.timeout("TASK_TIMEOUT", "task deadline reached during confirmation", epoch, elapsed(start));
+                    }
+                    WorldState current = snapshotWithGrace("tap_after_confirmation", 1000);
+                    UiNode verified = null;
+                    if (current != null && current.root != null
+                            && java.util.Objects.equals(state.foregroundPackage, current.foregroundPackage)) {
+                        for (UiNode candidate : current.root.flat()) {
+                            if (node.fingerprint().equals(candidate.fingerprint())) { verified = candidate; break; }
+                        }
+                    }
+                    if (verified == null) return ExecResult.fail("TARGET_CHANGED",
+                            "确认期间界面或目标发生变化，请重新读屏后再决定是否操作。", epoch, elapsed(start));
+                    node = verified;
+                }
+                if (cancelRequested != null && cancelRequested.get()) return ExecResult.cancelled("USER_CANCEL", "cancel requested before click", epoch);
+                if (System.currentTimeMillis() >= taskDeadlineMs) return ExecResult.timeout("TASK_TIMEOUT", "task deadline reached before click", epoch, elapsed(start));
+                ExecResult r = accessibilityBridge.performClick(node, spec.timeoutMs, state.foregroundPackage);
                 if (r.ok()) {
                     return ExecResult.ok("TAP_TEXT_OK",
                             query + " -> " + node.nodeId + " (scrolls=" + attempt
@@ -963,7 +995,8 @@ public final class ActionExecutor {
                 if (close != null) {
                     dismissed = close.text != null && !close.text.trim().isEmpty()
                             ? close.text.trim() : close.contentDescription;
-                    boolean clicked = accessibilityBridge.performClick(close, spec.timeoutMs).ok();
+                    if (cancelRequested != null && cancelRequested.get()) return ExecResult.cancelled("USER_CANCEL", "cancel requested before dialog dismissal", epoch);
+                    boolean clicked = accessibilityBridge.performClick(close, spec.timeoutMs, state.foregroundPackage).ok();
                     logTap("dismiss-click ok=" + clicked);
                     if (clicked) {
                         if (!sleepQuietly(settleMs)) {
@@ -1001,10 +1034,28 @@ public final class ActionExecutor {
         }
     }
 
-    /** 挡路弹窗里允许自动点击的按钮文案：只认无副作用的确认/关闭，绝不包含授权类。 */
+    /** 挡路弹窗只可自动点击明确的关闭或取消，模糊确认可能触发外部操作。 */
     private static final List<String> SAFE_DIALOG_LABELS = java.util.Arrays.asList(
-            "ok", "okay", "got it", "continue", "close", "dismiss", "no thanks",
-            "确定", "知道了", "明白了", "关闭", "继续");
+            "close", "dismiss", "cancel", "no thanks", "关闭", "取消");
+
+    private static final java.util.regex.Pattern CONSEQUENTIAL_ENGLISH = java.util.regex.Pattern.compile(
+            "\\b(send|submit|publish|post|pay|purchase|buy|order|transfer|delete|remove|confirm|allow|authorize|grant|accept|agree|share|follow|subscribe|save|ok|okay|continue|proceed|done)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static String sensitiveTapLabel(String query, UiNode target) {
+        if (consequentialLabel(query)) return query;
+        for (UiNode node : target.flat()) {
+            if (!node.visible) continue;
+            if (consequentialLabel(node.text)) return node.text;
+            if (consequentialLabel(node.contentDescription)) return node.contentDescription;
+        }
+        return null;
+    }
+    private static boolean consequentialLabel(String value) {
+        if (value == null) return false;
+        for (String word : new String[]{"发送","发布","提交","支付","付款","购买","下单","转账","删除","清空","授权","允许","同意","确认","确定","分享","收藏","关注","保存","完成","继续","知道了","明白了"})
+            if (value.contains(word)) return true;
+        return CONSEQUENTIAL_ENGLISH.matcher(value).find();
+    }
 
     static boolean isSafeDialogLabel(String label) {
         if (label == null) return false;
@@ -1038,8 +1089,7 @@ public final class ActionExecutor {
     /**
      * 目标文本找不到、且当前窗口是挡路对话框时，返回可安全点击的关闭按钮；没有则 null。
      *
-     * <p>只点 OK/Got it/Continue/Close 这类确认，授权类按钮（Allow/允许）必须由人点，
-     * 因此这里用白名单精确匹配，而不是"随便点一个按钮"。
+     * <p>只点明确的关闭或取消按钮；模糊的 OK/确定/继续可能提交操作，不自动点击。
      */
     static UiNode dismissBlockingDialog(WorldState state) {
         if (state == null || state.root == null) return null;

@@ -24,9 +24,12 @@ public class TapTextDialogTest {
 
     @Test
     public void safeLabelsAcceptedButAuthorizationLabelsRejected() {
-        assertTrue(ActionExecutor.isSafeDialogLabel("OK"));
-        assertTrue(ActionExecutor.isSafeDialogLabel(" got it "));
-        assertTrue(ActionExecutor.isSafeDialogLabel("确定"));
+        assertTrue(ActionExecutor.isSafeDialogLabel(" Close "));
+        assertTrue(ActionExecutor.isSafeDialogLabel("关闭"));
+        assertFalse(ActionExecutor.isSafeDialogLabel("OK"));
+        assertFalse(ActionExecutor.isSafeDialogLabel(" got it "));
+        assertFalse(ActionExecutor.isSafeDialogLabel("确定"));
+        assertFalse(ActionExecutor.isSafeDialogLabel("continue"));
         // 授权类必须由人点，永远不允许自动点。
         assertFalse(ActionExecutor.isSafeDialogLabel("Allow"));
         assertFalse(ActionExecutor.isSafeDialogLabel("允许"));
@@ -38,7 +41,7 @@ public class TapTextDialogTest {
     }
 
     @Test
-    public void partialWindowWithOkButtonIsDismissable() {
+    public void ambiguousOkDialogIsNotAutomaticallyConfirmed() {
         // 实测 NewPipe 首启公告：android:id/parentPanel + android:id/button1。
         UiNode ok = node("button", "Button", "OK", null, true,
                 Arrays.asList(), 466, 900, 642, 1012, "android:id/button1");
@@ -47,8 +50,7 @@ public class TapTextDialogTest {
         UiNode root = node("root", "FrameLayout", "", null, false,
                 Arrays.asList(panel), 1, 146, 719, 1147, null);
 
-        UiNode picked = ActionExecutor.dismissBlockingDialog(state(root));
-        assertEquals("button", picked.nodeId);
+        assertNull(ActionExecutor.dismissBlockingDialog(state(root)));
     }
 
     @Test
@@ -79,7 +81,7 @@ public class TapTextDialogTest {
 
     @Test
     public void dialogClassAloneIsEnoughToDetectDialog() {
-        UiNode ok = node("ok", "Button", "Got it", null, true,
+        UiNode ok = node("ok", "Button", "Close", null, true,
                 Arrays.asList(), 10, 10, 100, 60, null);
         UiNode root = node("root", "androidx.appcompat.app.AlertDialog", "", null, false,
                 Arrays.asList(ok), 0, 0, 720, 600, null);

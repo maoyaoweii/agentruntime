@@ -159,8 +159,12 @@ public final class SessionStore extends SQLiteOpenHelper {
         for(String id:pending) appendInternal(db,session,turn,"tool_result",new JSONObject().put("role","tool").put("tool_call_id",id)
                 .put("content",new JSONObject().put("ok",false).put("code","RESULT_UNAVAILABLE")
                         .put("message","Execution was interrupted. The action may have taken effect; verify the current state before any retry.").toString()));
+        boolean budget=("failed".equals(state)&&("MODEL_STEP_LIMIT".equals(code)||"TOOL_LIMIT".equals(code)))
+                ||("cancelled".equals(state)&&"TURN_TIMEOUT".equals(code));
+        String next=budget?"Continue only if the app explicitly starts a continuation of this request. Do not repeat rejected or uncertain actions; verify their outcomes first."
+                :"Do not resume or repeat this task without a new user request.";
         appendInternal(db,session,turn,"assistant_message",new JSONObject().put("role","assistant").put("reasoning_content","")
-                .put("content","[DSH Runtime] This turn ended: "+state+" ("+code+"). Completed tool results remain valid. Do not resume or repeat this task without a new user request."));
+                .put("content","[DSH Runtime] This turn ended: "+state+" ("+code+"). Completed tool results remain valid. "+next));
     }
 
     public synchronized void recoverInterrupted() throws JSONException {
@@ -181,6 +185,22 @@ public final class SessionStore extends SQLiteOpenHelper {
         } catch(Exception e) {
             return "";
         }
+    }
+
+    /** Refuse automatic continuation when an action was rejected or may already have taken effect. */
+    public synchronized boolean hasUnsafeToolOutcome(String session,String turn) {
+        try(Cursor cursor=getReadableDatabase().rawQuery(
+                "SELECT payload FROM events WHERE session_id=? AND turn_id=? AND type='tool_result' ORDER BY seq",
+                new String[]{session,turn})) {
+            while(cursor.moveToNext()) {
+                JSONObject payload=new JSONObject(cursor.getString(0));
+                JSONObject result=new JSONObject(payload.getString("content"));
+                String code=result.optString("code","");
+                if("RESULT_UNAVAILABLE".equals(code)||"USER_REJECTED".equals(code)||"CONFIRMATION_NOT_OBTAINED".equals(code)
+                        ||result.optBoolean("outcome_uncertain",false)) return true;
+            }
+            return false;
+        } catch(Exception e) { return true; }
     }
 
     public synchronized String turnState(String turn) {
@@ -221,12 +241,60 @@ public final class SessionStore extends SQLiteOpenHelper {
         List<List<JSONObject>> selected=new ArrayList<>(); int size=0;
         for(List<JSONObject> turn:byTurn.values()) {
             int count=0; for(JSONObject message:turn) count+=message.toString().length();
-            if(size+count>maxCharacters) break;
+            if(size+count>maxCharacters) {
+                if(!selected.isEmpty()) break;
+                // A long most-recent turn must not disappear completely during automatic continuation.
+                // Retain its protocol and actions, compact only tool result bodies, and fail closed if
+                // even the essential messages cannot fit.
+                turn=compactLatestTurn(turn); count=0;
+                for(JSONObject message:turn) count+=message.toString().length();
+                if(count>maxCharacters) throw new JSONException("CONTEXT_LIMIT");
+            }
             Collections.reverse(turn); selected.add(turn); size+=count;
             if(selected.size()==12) break;
         }
         Collections.reverse(selected); JSONArray result=new JSONArray();
         for(List<JSONObject> turn:selected) for(JSONObject message:turn) result.put(message);
         return result;
+    }
+
+    /** Input is newest first; original events remain untouched in the database. */
+    private static List<JSONObject> compactLatestTurn(List<JSONObject> messages) throws JSONException {
+        List<JSONObject> compacted=new ArrayList<>(); boolean keptRecentDetail=false;
+        for(JSONObject message:messages) {
+            JSONObject copy=new JSONObject(message.toString());
+            if("tool".equals(copy.optString("role"))) {
+                try {
+                    JSONObject original=new JSONObject(copy.getString("content")),result=new JSONObject();
+                    for(String field:new String[]{"ok","code","outcome_uncertain","replayed"})
+                        if(original.has(field)) result.put(field,original.get(field));
+                    for(String field:new String[]{"message","notice"})
+                        if(original.has(field)) result.put(field,historyClip(original.optString(field),500));
+                    String output=original.optString("output","");
+                    Object data=original.opt("data");
+                    String detail=!output.isEmpty()?output:data==null||data==JSONObject.NULL?"":data.toString();
+                    int limit=!keptRecentDetail&&detail.length()>1000?4000:1000;
+                    if(limit==4000) keptRecentDetail=true;
+                    if(!output.isEmpty()) result.put("output",historyClip(output,limit));
+                    else if(original.has("data")) {
+                        data=original.get("data"); String text=data instanceof String?(String)data:data.toString();
+                        if(text.length()<=limit) result.put("data",data); else result.put("data_excerpt",historyClip(text,limit));
+                    }
+                    result.put("history_compacted",true);
+                    result.put("history_note","较早工具结果已压缩；完整结果仍保存在本机会话中。");
+                    copy.put("content",result.toString());
+                } catch(JSONException ignored) { /* A malformed result remains intact; the size check fails closed if needed. */ }
+            }
+            compacted.add(copy);
+        }
+        return compacted;
+    }
+
+    private static String historyClip(String value,int limit) {
+        if(value.length()<=limit) return value;
+        int head=limit*3/4,tail=value.length()-(limit-head);
+        if(head>0&&Character.isHighSurrogate(value.charAt(head-1))) head--;
+        if(tail<value.length()&&Character.isLowSurrogate(value.charAt(tail))) tail++;
+        return value.substring(0,head)+"\n…（内容已压缩）…\n"+value.substring(tail);
     }
 }

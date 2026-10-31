@@ -129,7 +129,7 @@ final class ChatRenderer {
         String key=turn+":"+sequence; int incomplete=0,unknown=0;
         for(JSONObject call:calls) {
             JSONObject result=results.get(turn+":"+call.optString("id"));
-            if(result==null||"RESULT_UNAVAILABLE".equals(result.optString("code"))) unknown++;
+            if(result==null||"RESULT_UNAVAILABLE".equals(result.optString("code"))||result.optBoolean("outcome_uncertain",false)) unknown++;
             else if(!result.optBoolean("ok")) incomplete++;
         }
         String label=calls.size()+" 项工具记录"+(unknown>0?" · "+unknown+" 项结果未知":"")+(incomplete>0?" · "+incomplete+" 项未完成":"");
@@ -149,7 +149,7 @@ final class ChatRenderer {
     }
     private void tool(LinearLayout target,JSONObject started,JSONObject result,boolean settled) {
         String name=started.optString("name"); String label=result==null?(settled?"结果未知":"调用中"):
-                "RESULT_UNAVAILABLE".equals(result.optString("code"))?"结果未知":result.optBoolean("ok")?"已完成":"未完成";
+                "RESULT_UNAVAILABLE".equals(result.optString("code"))||result.optBoolean("outcome_uncertain",false)?"结果未知":result.optBoolean("ok")?"已完成":"未完成";
         LinearLayout card=UiKit.row(activity); UiKit.pad(card,14,13,14,13); card.setMinimumHeight(UiKit.dp(activity,48)); card.setBackground(UiKit.ripple(activity,0xfff0f3fa,0,14));
         TextView text=UiKit.bold(activity,"◇  "+name,12,UiKit.INK); card.addView(text,new LinearLayout.LayoutParams(0,-2,1));
         int statusColor="结果未知".equals(label)||"未完成".equals(label)?0xffa46516:"已完成".equals(label)?0xff1a7858:UiKit.MUTED;
@@ -169,14 +169,17 @@ final class ChatRenderer {
         switch(code) {
             case "USER_CANCELLED": return "你已停止本次回复。已完成的操作保留，可查看工具详情。";
             case "PROCESS_RESTARTED": case "SERVICE_STOPPED": return "本次任务已中断，没有自动重试。结果未知的操作请先核实。";
-            case "TURN_TIMEOUT": return "本轮达到单轮时间上限（5 分钟），已停止。任务没做完可以再发一次继续。";
+            case "TURN_TIMEOUT": return "本轮达到运行时间上限。结果未知的操作请先核实，再决定是否继续。";
             case "PLUGIN_DISABLED": return "插件已停用，本次任务已停止。";
+            case "CONFIRMATION_NOT_OBTAINED": return "操作未获得确认，已停止本次任务。";
             case "HTTP_401": case "HTTP_403": return "模型服务拒绝访问，请检查 API Key 和模型权限。";
             case "HTTP_402": return "模型服务余额不足，请检查账户。";
             case "HTTP_429": return "模型服务暂时限流，请稍后重新发送。";
+            case "CONTEXT_LIMIT": return "会话上下文过长，已停止自动继续，避免遗漏已执行的步骤。请说明当前进度后继续。";
             case "TOOL_LIMIT": case "MODEL_STEP_LIMIT": return "本次工具调用达到上限，已停止，请缩小任务范围。";
             case "MODEL_REPEATED_CALL": case "DUPLICATE_TOOL_CALL":
-                return "模型反复提交了同一次工具调用，已自动合并并停止，没有重复执行。重新发送一次通常就好。";
+                return "模型反复提交了同一次可能改变设备的操作，已停止重复执行。请先核实当前状态再继续。";
+            case "OBSERVATION_STALLED": return "连续多次读到相同画面，已暂停自动尝试。请检查目标应用是否已加载，再告诉助手如何继续。";
             case "TOOL_CALL_INVALID": return "模型的工具调用格式不正确（编号或参数不合法），请重新发送一次。";
             default: return "本次回复未完成（"+code+"）。请检查网络和模型设置后重新发送。";
         }

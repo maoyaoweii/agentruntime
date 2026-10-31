@@ -131,12 +131,12 @@ public final class AgentAccessibilityService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
-        instance = null;
+        if (instance == this) instance = null;
         super.onDestroy();
     }
 
     /** 全量快照重建：将当前可访问树写入 State Engine。 */
-    public WorldState snapshot(String source) {
+    public synchronized WorldState snapshot(String source) {
         StateEngine engine = engine();
         if (engine == null) return null;
         lastSnapshotTs = System.currentTimeMillis();
@@ -144,16 +144,20 @@ public final class AgentAccessibilityService extends AccessibilityService {
         if (root == null) {
             return engine.rebuildSnapshot(null, null, null, null, source);
         }
-        nodeIdSeq = 0;
-        UiNode tree = buildNode(root, 0);
-        String pkg = root.getPackageName() != null ? root.getPackageName().toString() : null;
-        AccessibilityNodeInfo focus = findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-        String focusId = null;
-        if (focus != null) {
-            UiNode match = findByFingerprint(tree, fingerprintOf(focus));
-            focusId = match != null ? match.nodeId : null;
-        }
-        return engine.rebuildSnapshot(pkg, pkg, tree, focusId, source);
+        try {
+            nodeIdSeq = 0;
+            UiNode tree = buildNode(root, 0);
+            String pkg = root.getPackageName() != null ? root.getPackageName().toString() : null;
+            AccessibilityNodeInfo focus = findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            String focusId = null;
+            if (focus != null) {
+                try {
+                    UiNode match = findByFingerprint(tree, fingerprintOf(focus));
+                    focusId = match != null ? match.nodeId : null;
+                } finally { focus.recycle(); }
+            }
+            return engine.rebuildSnapshot(pkg, pkg, tree, focusId, source);
+        } finally { root.recycle(); }
     }
 
     /**
@@ -165,7 +169,7 @@ public final class AgentAccessibilityService extends AccessibilityService {
      * {@link #getWindows()}（最上层应用窗口），并把连续失败次数打到日志，
      * 让"服务半死"能被看出来而不是伪装成找不到界面。
      */
-    private AccessibilityNodeInfo activeRoot() {
+    private synchronized AccessibilityNodeInfo activeRoot() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root != null) {
             nullRootStreak = 0;
@@ -175,12 +179,19 @@ public final class AgentAccessibilityService extends AccessibilityService {
             java.util.List<android.view.accessibility.AccessibilityWindowInfo> windows = getWindows();
             if (windows != null) {
                 AccessibilityNodeInfo fallback = null;
+                boolean activeFound = false;
+                // Android returns windows from highest layer to lowest. Never read a
+                // background app if the actual active window is a system dialog or unreadable.
                 for (android.view.accessibility.AccessibilityWindowInfo w : windows) {
-                    if (w.getType() != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) {
-                        continue;
-                    }
-                    AccessibilityNodeInfo r = w.getRoot();
-                    if (r != null) fallback = r; // 后出现的窗口更靠上
+                    if (!w.isActive()) continue;
+                    activeFound = true;
+                    if (w.getType() == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) fallback = w.getRoot();
+                    break;
+                }
+                if (!activeFound) for (android.view.accessibility.AccessibilityWindowInfo w : windows) {
+                    if (w.getType() != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) continue;
+                    fallback = w.getRoot();
+                    break;
                 }
                 if (fallback != null) {
                     nullRootStreak = 0;
@@ -220,7 +231,11 @@ public final class AgentAccessibilityService extends AccessibilityService {
      * 这里沿父链向上找最近的可点节点再点，最多 5 层。
      */
     public boolean click(UiNode target) {
-        AccessibilityNodeInfo live = findLiveNode(target);
+        return click(target, null);
+    }
+
+    public boolean click(UiNode target, String expectedPackage) {
+        AccessibilityNodeInfo live = findLiveNode(target, expectedPackage);
         if (live == null) return false;
         boolean ok = false;
         AccessibilityNodeInfo cursor = live;
@@ -326,25 +341,46 @@ public final class AgentAccessibilityService extends AccessibilityService {
     }
 
     private AccessibilityNodeInfo findLiveNode(UiNode target) {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null || target == null) return null;
+        return findLiveNode(target, null);
+    }
+
+    private AccessibilityNodeInfo findLiveNode(UiNode target, String expectedPackage) {
+        AccessibilityNodeInfo root = activeRoot();
+        if (root == null) return null;
+        if (target == null || (expectedPackage != null && !expectedPackage.contentEquals(
+                root.getPackageName() == null ? "" : root.getPackageName()))) {
+            root.recycle();
+            return null;
+        }
         // 先按完整身份（类名+resourceId+文本+描述+可点+可见）匹配，再按 resourceId 兜底。
         // 不能只用 resourceId：抽屉/列表的行常常共用同一个 id（实测 NewPipe 抽屉全是
         // design_menu_item_text），按 id 找会命中第一行。
         // 身份也可能重复：行容器本身无文本（文本在子节点），同构行身份一致，
         // 所以多命中时用坐标挑最接近快照位置的那个，避免"点 Settings 点成 History"。
         String identity = target.identityKey();
-        java.util.List<AccessibilityNodeInfo> hits = new java.util.ArrayList<>();
-        collectLive(root, n -> identity.equals(identityOf(n)), hits);
-        if (!hits.isEmpty()) return nearestByBounds(hits, target);
-        if (target.resourceId != null) {
-            java.util.List<AccessibilityNodeInfo> byId = new java.util.ArrayList<>();
-            collectLive(root, n -> target.resourceId.equals(n.getViewIdResourceName())
-                    && (target.className == null
-                    || target.className.equals(safe(n.getClassName()))), byId);
-            if (!byId.isEmpty()) return nearestByBounds(byId, target);
+        java.util.List<AccessibilityNodeInfo> hits = new java.util.ArrayList<>(), byId = new java.util.ArrayList<>();
+        collectLive(root, identity, target, hits, byId, 0, new int[]{0});
+        if (!hits.isEmpty()) {
+            for (AccessibilityNodeInfo n : byId) n.recycle();
+            if (expectedPackage != null) return exactBounds(hits, target);
+            return nearestByBounds(hits, target);
         }
+        if (expectedPackage == null && !byId.isEmpty()) return nearestByBounds(byId, target);
+        for (AccessibilityNodeInfo n : byId) n.recycle();
         return null;
+    }
+
+    /** A text tap is bound to the observed package and exact target, not just a reused resource ID. */
+    private AccessibilityNodeInfo exactBounds(java.util.List<AccessibilityNodeInfo> hits, UiNode target) {
+        AccessibilityNodeInfo selected = null; boolean ambiguous = false; Rect bounds = new Rect();
+        for (AccessibilityNodeInfo n : hits) {
+            n.getBoundsInScreen(bounds);
+            if (bounds.left == target.left && bounds.top == target.top && bounds.right == target.right && bounds.bottom == target.bottom) {
+                if (selected == null) selected = n; else ambiguous = true;
+            }
+        }
+        for (AccessibilityNodeInfo n : hits) if (ambiguous || n != selected) n.recycle();
+        return ambiguous ? null : selected;
     }
 
     /** 同一身份匹配到多个节点时，选屏幕位置最接近目标快照中心点的那个。 */
@@ -366,17 +402,25 @@ public final class AgentAccessibilityService extends AccessibilityService {
                 best = n;
             }
         }
-        return best != null ? best : hits.get(0);
+        AccessibilityNodeInfo selected = best != null ? best : hits.get(0);
+        for (AccessibilityNodeInfo n : hits) if (n != selected) n.recycle();
+        return selected;
     }
 
-    private void collectLive(AccessibilityNodeInfo node,
-                             java.util.function.Predicate<AccessibilityNodeInfo> pred,
-                             java.util.List<AccessibilityNodeInfo> out) {
+    private void collectLive(AccessibilityNodeInfo node, String identity, UiNode target,
+                             java.util.List<AccessibilityNodeInfo> hits, java.util.List<AccessibilityNodeInfo> byId,
+                             int depth, int[] visited) {
         if (node == null) return;
-        if (pred.test(node)) out.add(node);
-        for (int i = 0; i < node.getChildCount(); i++) {
-            collectLive(node.getChild(i), pred, out);
-        }
+        boolean retained = false;
+        try {
+            if (depth > MAX_DEPTH || visited[0]++ >= MAX_NODES) return;
+            if (identity.equals(identityOf(node))) { hits.add(node); retained = true; }
+            else if (target.resourceId != null && target.resourceId.equals(node.getViewIdResourceName())
+                    && (target.className == null || target.className.equals(safe(node.getClassName())))) {
+                byId.add(node); retained = true;
+            }
+            for (int i = 0; i < node.getChildCount(); i++) collectLive(node.getChild(i), identity, target, hits, byId, depth + 1, visited);
+        } finally { if (!retained) node.recycle(); }
     }
 
     private UiNode findByFingerprint(UiNode node, String fp) {
@@ -391,7 +435,7 @@ public final class AgentAccessibilityService extends AccessibilityService {
 
     private String identityOf(AccessibilityNodeInfo n) {
         return safe(n.getClassName()) + "|" + safe(n.getViewIdResourceName()) + "|"
-                + safe(n.getText()) + "|" + safe(n.getContentDescription()) + "|"
+                + (n.isPassword()?"":safe(n.getText())) + "|" + (n.isPassword()?"":safe(n.getContentDescription())) + "|"
                 + n.isClickable() + "|" + n.isEnabled() + "|" + n.isVisibleToUser();
     }
 
@@ -399,7 +443,7 @@ public final class AgentAccessibilityService extends AccessibilityService {
         Rect b = new Rect();
         n.getBoundsInScreen(b);
         return safe(n.getClassName()) + "|" + safe(n.getViewIdResourceName()) + "|"
-                + safe(n.getText()) + "|" + safe(n.getContentDescription()) + "|"
+                + (n.isPassword()?"":safe(n.getText())) + "|" + (n.isPassword()?"":safe(n.getContentDescription())) + "|"
                 + n.isClickable() + "|" + n.isEnabled() + "|" + n.isVisibleToUser() + "|"
                 + b.left + "," + b.top + "," + b.right + "," + b.bottom;
     }
@@ -413,15 +457,17 @@ public final class AgentAccessibilityService extends AccessibilityService {
         for (int i = 0; i < count; i++) {
             AccessibilityNodeInfo child = info.getChild(i);
             if (child == null) continue;
-            UiNode cn = buildNode(child, depth + 1);
-            if (cn != null) children.add(cn);
+            try {
+                UiNode cn = buildNode(child, depth + 1);
+                if (cn != null) children.add(cn);
+            } finally { child.recycle(); }
         }
         String id = "n" + (nodeIdSeq++);
         return new UiNode(
                 id,
                 safe(info.getClassName()),
-                toStr(info.getText()),
-                toStr(info.getContentDescription()),
+                info.isPassword() ? null : toStr(info.getText()),
+                info.isPassword() ? null : toStr(info.getContentDescription()),
                 info.getViewIdResourceName(),
                 info.isClickable(),
                 info.isEnabled(),

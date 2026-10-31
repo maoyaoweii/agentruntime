@@ -39,6 +39,16 @@ public class StepConfirmationTest {
         }
     }
 
+    @Test public void theResolvedSensitiveTargetIsConfirmedEvenAfterStepApproval() throws Exception {
+        RiskGate gate=new RiskGate(); AtomicInteger prompts=new AtomicInteger();
+        gate.setConfirmationChannel((id,summary)->{prompts.incrementAndGet(); return true;});
+        try(RiskGate.StepScope ignored=gate.openStep("generic action")) {
+            assertTrue(gate.check("step",risky(),"step").allow);
+            assertTrue(gate.confirmSensitiveTap("tap","resolved target: 发送").allow);
+        }
+        assertEquals(2,prompts.get());
+    }
+
     @Test public void displaysCompleteLongPayloadAndResolvedActionsBeforeApproval() throws Exception {
         RiskGate gate = new RiskGate();
         String payload = "a".repeat(513) + "tail-that-must-be-reviewed";

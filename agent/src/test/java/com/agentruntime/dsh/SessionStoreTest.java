@@ -59,6 +59,37 @@ public class SessionStoreTest {
         }
     }
 
+    @Test public void longLatestTurnKeepsToolProtocolAndRecentObservationInHistory() throws Exception {
+        try(SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
+            String session=store.createSession().id,turn=store.beginTurn(session,"浏览搜索结果","tools","fixture");
+            for(int i=0;i<4;i++) {
+                String id="call_"+i;
+                org.json.JSONArray calls=new org.json.JSONArray().put(new JSONObject().put("id",id).put("type","function")
+                        .put("function",new JSONObject().put("name","run_skill").put("arguments","{}")));
+                store.append(session,turn,"assistant_message",new JSONObject().put("role","assistant").put("content","").put("tool_calls",calls));
+                JSONObject result=new JSONObject().put("ok",true).put("code","SCREEN_TEXT")
+                        .put("output",(i==3?"LATEST_SCREEN ":"OLDER_SCREEN ")+"x".repeat(6000));
+                store.append(session,turn,"tool_result",new JSONObject().put("role","tool").put("tool_call_id",id).put("content",result.toString()));
+            }
+            store.finish(session,turn,"failed","MODEL_STEP_LIMIT");
+            org.json.JSONArray history=store.history(session,12000);
+            assertTrue(history.length()>=9); assertTrue(history.toString().contains("LATEST_SCREEN"));
+            assertTrue(history.toString().contains("history_compacted"));
+            for(int i=0;i<4;i++) assertTrue(history.toString().contains("call_"+i));
+            assertTrue(store.events(session).stream().filter(e->e.type.equals("tool_result"))
+                    .anyMatch(e->e.payload.optString("content").length()>6000));
+        }
+    }
+
+    @Test public void oversizedEssentialHistoryFailsInsteadOfSilentlyDisappearing() throws Exception {
+        try(SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
+            String session=store.createSession().id,turn=store.beginTurn(session,"a".repeat(5000),"chat","fixture");
+            store.finish(session,turn,"completed","OK");
+            org.json.JSONException error=assertThrows(org.json.JSONException.class,()->store.history(session,1000));
+            assertEquals("CONTEXT_LIMIT",error.getMessage());
+        }
+    }
+
     @Test public void rejectsUnknownSessionsAndBoundsUserInput() throws Exception {
         try(SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
             assertThrows(IllegalArgumentException.class,()->store.beginTurn("missing","hello","chat","fixture"));

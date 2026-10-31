@@ -55,6 +55,22 @@ public final class PluginRegistry {
     public final class Snapshot {
         private final Map<String,Entry> admitted;
         private Snapshot(Map<String,Entry> admitted) { this.admitted=Collections.unmodifiableMap(admitted); }
+        /** Only explicitly known observations may be repeated automatically. */
+        public boolean isReadOnly(String name,JSONObject arguments) {
+            Entry entry=admitted.get(name);
+            if(entry==null) return false;
+            if(!entry.tool.sideEffect) return true;
+            if(!"phone-skills".equals(entry.plugin)||!"run_skill".equals(name)||arguments==null
+                    ||arguments.optJSONObject("args")==null) return false;
+            String skill=arguments.optString("skill_id","");
+            return "sys.read_screen".equals(skill)||"sys.observe".equals(skill);
+        }
+        /** A swipe may be repeated only after a fresh observation shows a changed screen. */
+        public boolean isScreenNavigation(String name,JSONObject arguments) {
+            Entry entry=admitted.get(name);
+            return entry!=null&&"phone-skills".equals(entry.plugin)&&"run_skill".equals(name)&&arguments!=null
+                    &&arguments.optJSONObject("args")!=null&&"sys.swipe".equals(arguments.optString("skill_id"));
+        }
         public JSONArray schemas() throws Exception {
             JSONArray result=new JSONArray();
             for(Entry entry:admitted.values()) result.put(new JSONObject().put("type","function").put("function",
@@ -86,7 +102,7 @@ public final class PluginRegistry {
             catch(Exception e) { return failure("TOOL_FAILED"); }
             // Discard observations obtained after revocation. Side effects keep their outcome so
             // interruption never turns a completed write/action into an implied safe-to-repeat failure.
-            if(!entry.tool.sideEffect) { cancellation.check(); if(!enabled(entry.plugin)) return failure("PLUGIN_DISABLED"); }
+            if(isReadOnly(name,arguments)) { cancellation.check(); if(!enabled(entry.plugin)) return failure("PLUGIN_DISABLED"); }
             if(result==null) return failure("TOOL_FAILED");
             if(result.toString().length()>32768) result=clamp(result);
             return result;

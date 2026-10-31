@@ -17,7 +17,11 @@ public final class Cancellation {
     public void detach(HttpURLConnection value) { connection.compareAndSet(value,null); }
     public String reason() { return reason; }
     public synchronized void cancel(String code) {
-        if(flag.get()) return;
+        if(flag.get()) {
+            // A user stop or revocation must win even if the deadline fired just before it.
+            if("TURN_TIMEOUT".equals(reason)&&!"TURN_TIMEOUT".equals(code)) reason=code;
+            return;
+        }
         reason=code; flag.set(true);
         Thread thread=worker; if(thread!=null) thread.interrupt();
         HttpURLConnection current=connection.get();
