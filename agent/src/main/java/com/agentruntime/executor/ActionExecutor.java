@@ -527,7 +527,7 @@ public final class ActionExecutor {
                 break;
             }
             case READ_SCREEN: {
-                result = readScreen(before, spec, epoch, start);
+                result = readScreen(before, spec, epoch, start, cancelRequested, taskDeadlineMs);
                 break;
             }
             case INPUT_FOCUSED: {
@@ -710,7 +710,8 @@ public final class ActionExecutor {
      * 于是"能点不能读"。这里用无障碍树本身作为读通道：文字、可点击位置、可输入框、滚动容器。
      * 读不到根节点时明确报 A11Y_ROOT_UNAVAILABLE，而不是返回一条空成功。
      */
-    private ExecResult readScreen(WorldState state, ActionSpec spec, long epoch, long start) {
+    private ExecResult readScreen(WorldState state, ActionSpec spec, long epoch, long start,
+                                  AtomicBoolean cancelRequested, long taskDeadlineMs) {
         if (state == null || state.root == null) {
             return ExecResult.fail("A11Y_ROOT_UNAVAILABLE",
                     "无障碍服务在运行，但没有返回界面节点。请到 系统设置 → 无障碍 → DSH Mobile 确认开关为开启；"
@@ -731,6 +732,8 @@ public final class ActionExecutor {
 
         StringBuilder body = new StringBuilder();
         int shown = 0;
+        int labels = 0;
+        int editable = 0;
         java.util.List<UiNode> nodes = state.root.flat();
         for (UiNode node : nodes) {
             String label = node.text != null && !node.text.trim().isEmpty()
@@ -738,6 +741,8 @@ public final class ActionExecutor {
             boolean hasLabel = label != null && !label.trim().isEmpty();
             if (!hasLabel && !node.editable && !node.scrollable) continue;
             if (!node.visible) continue;
+            if (hasLabel) labels++;
+            if (node.editable) editable++;
 
             StringBuilder line = new StringBuilder();
             line.append(hasLabel ? "「" + clipText(label.trim(), 120) + "」" : "[" + simpleClass(node.className) + "]");
@@ -755,16 +760,67 @@ public final class ActionExecutor {
             body.append('\n').append(line);
             shown++;
         }
-        if (shown == 0) {
+        if (shown == 0 || (labels == 0 && editable == 0)) {
+            if (com.agentruntime.vision.ScreenOcrSettings.enabled(appContext)) {
+                return readScreenOcr(state, maxChars, epoch, start, cancelRequested, taskDeadlineMs);
+            }
             return ExecResult.ok("SCREEN_EMPTY",
-                    "界面读到了，但没有可读文字或可点节点（package=" + state.foregroundPackage
-                            + "，节点数=" + state.nodeCount() + "）。可能是自绘界面、启动广告页或正在加载。",
+                    "无障碍没有返回可读文字（package=" + state.foregroundPackage
+                            + "，节点数=" + state.nodeCount() + "）。原因可能是页面加载或系统没有提供内容，不能据此断定应用禁止读屏。"
+                            + "可在 DSH 的连接与设置中开启「画面文字识别」，再回到目标页面重试。",
                     epoch, elapsed(start));
         }
         String header = "package=" + state.foregroundPackage
                 + " window=" + (state.windowTitle == null ? "-" : clipText(state.windowTitle, 40))
                 + " 节点=" + state.nodeCount() + " 可读=" + shown;
         return ExecResult.ok("SCREEN_TEXT", header + body, epoch, elapsed(start));
+    }
+
+    private ExecResult readScreenOcr(WorldState state, int maxChars, long epoch, long start,
+                                     AtomicBoolean cancelled, long deadlineMs) {
+        ExtendedCapabilities c = capabilities;
+        if (c == null || c.screenOcr == null) {
+            return ExecResult.fail("OCR_UNAVAILABLE", "本机画面文字识别暂不可用。", epoch, elapsed(start));
+        }
+        long settingsRevision = com.agentruntime.vision.ScreenOcrSettings.revision(appContext);
+        com.agentruntime.vision.ScreenTextOcr.Result result = c.screenOcr.read(state, cancelled, deadlineMs);
+        if (cancelled != null && cancelled.get()) return ExecResult.cancelled("USER_CANCEL", "已取消读屏", epoch);
+        if (!com.agentruntime.vision.ScreenOcrSettings.enabled(appContext)
+                || settingsRevision != com.agentruntime.vision.ScreenOcrSettings.revision(appContext)) {
+            return ExecResult.fail("OCR_DISABLED", "画面文字识别已关闭，结果已丢弃。", epoch, elapsed(start));
+        }
+        if (System.currentTimeMillis() >= deadlineMs) {
+            return ExecResult.timeout("TASK_TIMEOUT", "读屏超时，结果已丢弃。", epoch, elapsed(start));
+        }
+        WorldState current = stateEngine.current();
+        if (current == null || current.epoch != state.epoch
+                || !java.util.Objects.equals(current.foregroundPackage, state.foregroundPackage)) {
+            return ExecResult.fail("SCREEN_CHANGED", "识别期间前台窗口发生变化，结果已丢弃，请重新读屏。", epoch, elapsed(start));
+        }
+        if (result == null) return ExecResult.fail("OCR_FAILED", "画面文字识别未返回结果。", epoch, elapsed(start));
+        if (!"SCREEN_OCR".equals(result.code)
+                || result.text == null || result.text.trim().isEmpty()) {
+            String code = result.code == null ? "OCR_FAILED" : result.code;
+            if ("SCREEN_OCR".equals(code)) code = "OCR_EMPTY";
+            return ExecResult.fail(code, ocrErrorMessage(code), epoch, elapsed(start));
+        }
+        return ExecResult.ok("SCREEN_OCR", "package=" + state.foregroundPackage
+                + " 来源=本机画面文字识别；仅为可见文字，可能误识别或顺序有误，不能证明文字可点击。\n"
+                + clipText(result.text.trim(), maxChars), epoch, elapsed(start));
+    }
+
+    private static String ocrErrorMessage(String code) {
+        if ("SCREENSHOT_UNSUPPORTED".equals(code)) return "画面文字识别需要 Android 11 或更新版本。";
+        if ("SCREENSHOT_SERVICE_UNAVAILABLE".equals(code)) return "无障碍截图服务不可用，请检查无障碍设置。";
+        if ("SCREENSHOT_SECURE".equals(code)) return "系统保护了当前窗口，无法截取或识别其中内容。";
+        if ("SCREEN_CHANGED".equals(code)) return "识别期间前台窗口发生变化，结果已丢弃，请重新读屏。";
+        if ("SCREEN_BOUNDS_UNAVAILABLE".equals(code)) return "无法确定前台应用的画面范围，未进行识别。";
+        if ("OCR_EMPTY".equals(code)) return "截图识别未发现可读文字；页面可能仍在加载、文字不可见或画面受系统保护。";
+        if ("OCR_BUSY".equals(code)) return "上一次画面识别仍在进行，请稍后重试。";
+        if ("OCR_TIMEOUT".equals(code)) return "画面文字识别超时，请稍后重试。";
+        if ("OCR_DISABLED".equals(code)) return "画面文字识别已关闭，结果已丢弃。";
+        if ("USER_CANCEL".equals(code)) return "读屏已取消。";
+        return "无法截取或识别当前画面，请检查无障碍权限并稍后重试；受保护画面可能无法读取。";
     }
 
     /**

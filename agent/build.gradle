@@ -10,8 +10,8 @@ android {
         applicationId 'com.agentruntime.agent'
         minSdk 26
         targetSdk 34
-        versionCode 16
-        versionName '2.0.6-mobile-preview.8'
+        versionCode 17
+        versionName '2.0.7-mobile-preview.9'
         testInstrumentationRunner 'com.agentruntime.DeviceSmokeInstrumentation'
         // 两个 ABI 都打进去：
         // - arm64-v8a 覆盖 2020 年后的真机（99% 的现役设备）
@@ -80,6 +80,8 @@ android {
 dependencies {
     // 端侧视觉语言模型推理：这是"内置模型"能跑起来的前提
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.18.0'
+    // 随应用打包的中文与拉丁文字识别模型，不依赖运行时下载。
+    implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'

@@ -23,5 +23,7 @@
         <activity android:name=".FormActivity" android:exported="false" />
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".FaultActivity" android:exported="false" />
+        <activity android:name=".OcrFixtureActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>

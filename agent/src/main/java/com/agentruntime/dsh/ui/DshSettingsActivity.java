@@ -32,6 +32,7 @@ public final class DshSettingsActivity extends Activity {
         secureInitially=(getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0;
         LinearLayout page=UiKit.page(this,"连接与设置",null);
         page.addView(permissionCard()); UiKit.gap(page,14);
+        page.addView(screenReadingCard()); UiKit.gap(page,14);
         LinearLayout card=UiKit.card(this); card.addView(UiKit.bold(this,"模型服务",18,UiKit.INK)); UiKit.gap(card,14);
         url=UiKit.input(this,"https://api.deepseek.com",false); url.setId(com.agentruntime.agent.R.id.dsh_model_url); url.setContentDescription("服务地址");
         url.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI); url.setText(graph.provider.url()); UiKit.formRow(card,"服务地址",url);
@@ -92,6 +93,27 @@ public final class DshSettingsActivity extends Activity {
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,UiKit.dp(this,44),1); p.setMarginStart(UiKit.dp(this,8)); actions.addView(open,p);
         card.addView(actions);
         refreshA11y();
+        return card;
+    }
+    private LinearLayout screenReadingCard() {
+        LinearLayout card=UiKit.card(this);
+        LinearLayout row=UiKit.row(this);
+        TextView label=UiKit.bold(this,"画面文字识别",16,UiKit.INK);
+        Switch enabled=UiKit.toggle(this,"画面文字识别",com.agentruntime.vision.ScreenOcrSettings.enabled(this));
+        enabled.setId(com.agentruntime.agent.R.id.dsh_screen_ocr); enabled.setSaveEnabled(false); label.setLabelFor(enabled.getId());
+        row.addView(label,new LinearLayout.LayoutParams(0,-2,1)); row.addView(enabled); card.addView(row); UiKit.gap(card,8);
+        card.addView(UiKit.text(this,"无障碍读不到文字时，可在手机本地识别当前画面（Android 11 及以上）。画面可能包含悬浮内容、隐私或明文密码，受保护的窗口可能无法读取。识别文字会保存到会话并发送给你配置的模型服务；Google ML Kit 可能发送性能指标。",12,UiKit.MUTED));
+        boolean[] reverting={false};
+        enabled.setOnCheckedChangeListener((button,checked)->{
+            if(reverting[0]) return;
+            if(!com.agentruntime.vision.ScreenOcrSettings.setEnabled(this,checked)) {
+                if(checked) {
+                    reverting[0]=true; com.agentruntime.vision.ScreenOcrSettings.setEnabled(this,false);
+                    button.setChecked(false); reverting[0]=false;
+                }
+                UiKit.toast(this,"无法保存设置，请重试");
+            }
+        });
         return card;
     }
     private void refreshA11y() {

@@ -91,6 +91,17 @@ public class DshUiTest {
             controller.pause(); assertTrue(key.getTransformationMethod() instanceof PasswordTransformationMethod);
         }
     }
+    @Test public void screenshotReadingRequiresAnExplicitSettingAndSurvivesRotation() {
+        com.agentruntime.vision.ScreenOcrSettings.setEnabled(RuntimeEnvironment.getApplication(),false);
+        try(ActivityController<DshSettingsActivity> controller=Robolectric.buildActivity(DshSettingsActivity.class).setup()) {
+            Switch toggle=controller.get().findViewById(R.id.dsh_screen_ocr);
+            assertFalse(toggle.isChecked()); toggle.setChecked(true);
+            assertTrue(com.agentruntime.vision.ScreenOcrSettings.enabled(controller.get()));
+            controller.recreate(); assertTrue(((Switch)controller.get().findViewById(R.id.dsh_screen_ocr)).isChecked());
+            ((Switch)controller.get().findViewById(R.id.dsh_screen_ocr)).setChecked(false);
+            assertFalse(com.agentruntime.vision.ScreenOcrSettings.enabled(controller.get()));
+        }
+    }
     @Test public void rotationDoesNotRestoreAnEnteredKey() {
         try(ActivityController<DshSettingsActivity> controller=Robolectric.buildActivity(DshSettingsActivity.class).setup()) {
             DshSettingsActivity activity=controller.get();

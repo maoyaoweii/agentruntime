@@ -41,6 +41,16 @@ public final class ScreenCapturer {
 
     private final AgentAccessibilityService service;
 
+    public static final class CaptureResult {
+        public final ScreenFrame frame;
+        public final String code;
+
+        private CaptureResult(ScreenFrame frame, String code) {
+            this.frame = frame;
+            this.code = code;
+        }
+    }
+
     public ScreenCapturer(AgentAccessibilityService service) {
         this.service = service;
     }
@@ -66,17 +76,24 @@ public final class ScreenCapturer {
      * @return 截图帧；不可用或失败时返回 null
      */
     // The SDK 30 guard also covers the screenshot callback and its result APIs.
-    @android.annotation.SuppressLint("NewApi")
     public ScreenFrame capture(int maxEdge, int quality) {
-        if (Build.VERSION.SDK_INT < 30) return null;
+        return captureDetailed(maxEdge, quality).frame;
+    }
+
+    /** 截图失败时保留可诊断的原因，不绕过系统的安全窗口限制。 */
+    @android.annotation.SuppressLint("NewApi")
+    public CaptureResult captureDetailed(int maxEdge, int quality) {
+        if (Build.VERSION.SDK_INT < 30) return new CaptureResult(null, "SCREENSHOT_UNSUPPORTED");
         AgentAccessibilityService svc = service != null
                 ? service : AgentAccessibilityService.getInstance();
-        if (svc == null) return null;
+        if (svc == null) return new CaptureResult(null, "SCREENSHOT_SERVICE_UNAVAILABLE");
 
         long start = System.currentTimeMillis();
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicReference<Bitmap> bitmapRef = new AtomicReference<>();
         final AtomicInteger errorRef = new AtomicInteger(0);
+        final Object captureLock = new Object();
+        final boolean[] abandoned = {false};
         Handler main = new Handler(Looper.getMainLooper());
 
         try {
@@ -91,7 +108,12 @@ public final class ScreenCapturer {
                                 if (hw != null) {
                                     // 硬件位图不能直接 compress，拷贝成软件位图
                                     Bitmap soft = hw.copy(Bitmap.Config.ARGB_8888, false);
-                                    bitmapRef.set(soft);
+                                    synchronized (captureLock) {
+                                        if (abandoned[0]) {
+                                            if (soft != null) soft.recycle();
+                                        } else bitmapRef.set(soft);
+                                    }
+                                    hw.recycle();
                                 }
                             } catch (Throwable t) {
                                 errorRef.set(-1);
@@ -110,19 +132,34 @@ public final class ScreenCapturer {
                     });
             if (!latch.await(CAPTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
                 android.util.Log.w(TAG, "takeScreenshot timed out after " + CAPTURE_TIMEOUT_MS + "ms");
-                return null;
+                synchronized (captureLock) {
+                    abandoned[0] = true;
+                    Bitmap late = bitmapRef.getAndSet(null);
+                    if (late != null) late.recycle();
+                }
+                return new CaptureResult(null, "SCREENSHOT_TIMEOUT");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return null;
+            synchronized (captureLock) {
+                abandoned[0] = true;
+                Bitmap late = bitmapRef.getAndSet(null);
+                if (late != null) late.recycle();
+            }
+            return new CaptureResult(null, "SCREENSHOT_CANCELLED");
         } catch (Throwable t) {
             // 不静默：设备上截图失败必须可诊断，否则表现为"截图能力永远不可用"而查不到原因。
             android.util.Log.w(TAG, "takeScreenshot threw: " + t.getClass().getName() + ": " + t.getMessage());
-            return null;
+            return new CaptureResult(null, "SCREENSHOT_FAILED");
         }
 
         Bitmap source = bitmapRef.get();
-        if (source == null || source.getWidth() <= 0) return null;
+        if (source == null || source.getWidth() <= 0) {
+            String code = Build.VERSION.SDK_INT >= 34
+                    && errorRef.get() == AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW
+                    ? "SCREENSHOT_SECURE" : "SCREENSHOT_FAILED";
+            return new CaptureResult(null, code);
+        }
 
         try {
             int sw = source.getWidth();
@@ -143,14 +180,14 @@ public final class ScreenCapturer {
             source.recycle();
 
             long elapsed = System.currentTimeMillis() - start;
-            return new ScreenFrame(sw, sh, iw, ih, bytes, "image/jpeg",
-                    System.currentTimeMillis(), elapsed);
+            return new CaptureResult(new ScreenFrame(sw, sh, iw, ih, bytes, "image/jpeg",
+                    System.currentTimeMillis(), elapsed), "SCREENSHOT_OK");
         } catch (Throwable t) {
             try {
                 source.recycle();
             } catch (Throwable ignored) {
             }
-            return null;
+            return new CaptureResult(null, "SCREENSHOT_FAILED");
         }
     }
 

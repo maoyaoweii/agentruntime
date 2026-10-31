@@ -107,7 +107,8 @@ public final class AgentApp extends Application {
         browserController = new BrowserController(this);
         systemBridge = new com.agentruntime.device.SystemBridge(this);
         actionExecutor.attach(new ExtendedCapabilities(
-                gestureBridge, screenCapturer, visualGrounder, browserController, envProbe, systemBridge));
+                gestureBridge, screenCapturer, visualGrounder, browserController, envProbe, systemBridge,
+                new com.agentruntime.vision.OnDeviceScreenOcr(this, screenCapturer)));
     }
 
     public static AgentApp get() {

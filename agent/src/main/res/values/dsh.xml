@@ -18,6 +18,7 @@
     <item name="dsh_reveal_key" type="id" />
     <item name="dsh_protocol" type="id" />
     <item name="dsh_thinking" type="id" />
+    <item name="dsh_screen_ocr" type="id" />
     <style name="DshBaseTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#4D6BFE</item>
