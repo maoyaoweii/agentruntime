@@ -37,10 +37,12 @@ final class ChatRenderer {
             Map<String,JSONObject> requested=new HashMap<>();
             Set<String> started=new HashSet<>();
             Set<String> settledTurns=new HashSet<>();
+            Set<String> continuedTurns=new HashSet<>();
             for(SessionStore.Event event:events) {
                 if("tool_result".equals(event.type)) results.put(event.turnId+":"+event.payload.optString("tool_call_id"),new JSONObject(event.payload.optString("content","{}")));
                 else if("tool_started".equals(event.type)) started.add(event.turnId+":"+event.payload.optString("id"));
                 else if("turn_finished".equals(event.type)) settledTurns.add(event.turnId);
+                else if("turn_continued".equals(event.type)) continuedTurns.add(event.turnId);
                 else if("assistant_message".equals(event.type)) {
                     org.json.JSONArray calls=event.payload.optJSONArray("tool_calls");
                     if(calls!=null) for(int n=0;n<calls.length();n++) {
@@ -73,7 +75,10 @@ final class ChatRenderer {
                         tool(content,call,results.get(event.turnId+":"+call.optString("id")),false);
                     }
                 }
-                else if("turn_finished".equals(event.type)&&!"completed".equals(data.optString("state"))) note(explain(data.optString("code")),0xffa46516);
+                else if("turn_finished".equals(event.type)&&!"completed".equals(data.optString("state"))) {
+                    if(continuedTurns.contains(event.turnId)) note("本轮工具预算用完，已自动接着做。",UiKit.MUTED);
+                    else note(explain(data.optString("code")),0xffa46516);
+                }
             }
             live=UiKit.text(activity,"",15,UiKit.INK); live.setTextIsSelectable(true); UiKit.pad(live,4,10,4,10); content.addView(live);
             if(events.isEmpty()) { if(changedSession) scroll.post(()->scroll.scrollTo(0,0)); }
@@ -164,7 +169,7 @@ final class ChatRenderer {
         switch(code) {
             case "USER_CANCELLED": return "你已停止本次回复。已完成的操作保留，可查看工具详情。";
             case "PROCESS_RESTARTED": case "SERVICE_STOPPED": return "本次任务已中断，没有自动重试。结果未知的操作请先核实。";
-            case "TURN_TIMEOUT": return "本次任务达到 3 分钟上限，已停止。";
+            case "TURN_TIMEOUT": return "本轮达到单轮时间上限（5 分钟），已停止。任务没做完可以再发一次继续。";
             case "PLUGIN_DISABLED": return "插件已停用，本次任务已停止。";
             case "HTTP_401": case "HTTP_403": return "模型服务拒绝访问，请检查 API Key 和模型权限。";
             case "HTTP_402": return "模型服务余额不足，请检查账户。";

@@ -43,7 +43,7 @@ public final class DshTurnService extends Service {
             else startForeground(NOTIFICATION,notification);
             // 悬浮状态卡：目标应用在前台时，用户仍然能看到进度，也能随时停止。
             overlay=new DshStatusOverlay(this); overlay.show(active.session);
-            if(!controller.launch(id,()->{ if(overlay!=null) overlay.hide(); owned=null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); })) {
+            if(!controller.launch(id,()->finishTurn(id))) {
                 if(overlay!=null) overlay.hide();
                 owned=null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf();
             }
@@ -56,6 +56,25 @@ public final class DshTurnService extends Service {
         return new Intent(context,DshActivity.class).putExtra("session",session)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
     }
+    /**
+     * 一轮结束：预算用完就自动续下一轮，否则收工。
+     *
+     * <p>长任务真正的拦路虎不是模型能力，而是"单轮 12 步"这种硬预算。
+     * 续跑仍受 {@link DshController#MAX_ROUNDS} 与用户停止约束，
+     * 不会变成无限重试。
+     */
+    private void finishTurn(String id) {
+        DshController controller=AgentApp.get().dsh().controller;
+        String next=controller.continuationFor(id);
+        if(next!=null&&controller.launch(next,()->finishTurn(next))) {
+            DshController.View view=controller.active();
+            if(overlay!=null&&view!=null) overlay.show(view.session);
+            return;
+        }
+        if(overlay!=null) overlay.hide();
+        owned=null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf();
+    }
+
     @Override public void onDestroy() {
         if(overlay!=null) overlay.hide();
         if(owned!=null) AgentApp.get().dsh().controller.cancel(owned,"SERVICE_STOPPED");

@@ -122,6 +122,13 @@ public final class SessionStore extends SQLiteOpenHelper {
         db.insertOrThrow("events",null,values);
     }
 
+    /** 记录"这一轮被自动续跑"。写在回合结束之后，因此不走 {@link #append} 的 running 校验。 */
+    public synchronized void markContinued(String session,String turn,String next) {
+        try {
+            appendInternal(getWritableDatabase(),session,turn,"turn_continued",new JSONObject().put("next",next));
+        } catch(Exception ignored) { }
+    }
+
     public synchronized void finish(String session,String turn,String state,String code) throws JSONException {
         if(!"running".equals(boundState(session,turn))) return;
         if(!java.util.Arrays.asList("completed","failed","cancelled","interrupted").contains(state)) throw new IllegalArgumentException("Invalid turn state");
@@ -162,6 +169,18 @@ public final class SessionStore extends SQLiteOpenHelper {
             while(cursor.moveToNext()) pending.add(new String[]{cursor.getString(0),cursor.getString(1)});
         }
         for(String[] pair:pending) finish(pair[0],pair[1],"interrupted","PROCESS_RESTARTED");
+    }
+
+    /** 该回合结束时的原因码；未结束时返回空串。 */
+    public synchronized String turnCode(String turn) {
+        try(Cursor cursor=getReadableDatabase().rawQuery(
+                "SELECT payload FROM events WHERE turn_id=? AND type='turn_finished' ORDER BY seq DESC LIMIT 1",
+                new String[]{turn})) {
+            if(!cursor.moveToFirst()) return "";
+            return new JSONObject(cursor.getString(0)).optString("code","");
+        } catch(Exception e) {
+            return "";
+        }
     }
 
     public synchronized String turnState(String turn) {

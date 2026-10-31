@@ -25,6 +25,81 @@ public class DshControllerTest {
         DshRuntime runtime=new DshRuntime(store,(p,m,t,c,d)->new JSONObject().put("role","assistant").put("content","fixture finished"));
         return new DshController(app,store,provider,plugins,runtime);
     }
+    private static String latestTurn(SessionStore store,String session) throws Exception {
+        // 取最后一个 turn_started：turn_continued 会插在更后面，按"最后一条事件"取会取错回合。
+        String turn=null;
+        for(SessionStore.Event event:store.events(session)) if("turn_started".equals(event.type)) turn=event.turnId;
+        return turn;
+    }
+
+    /**
+     * 长任务：单轮工具预算用完不该判死刑，要自动开下一轮接着做。
+     */
+    @Test public void budgetExhaustionContinuesInANewTurn() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String id=controller.reserve(session,"把 B 站的三个视频都收藏",true);
+            store.finish(session,latestTurn(store,session),"failed","MODEL_STEP_LIMIT");
+
+            String next=controller.continuationFor(id);
+
+            assertNotNull(next);
+            assertNotNull(controller.active());
+            assertEquals(next,controller.active().id);
+            String text=store.events(session).stream()
+                    .filter(e->e.type.equals("user_message")).reduce((a,b)->b).get().payload.optString("content");
+            assertTrue(text.startsWith("[DSH Runtime]"));
+            assertTrue(text.contains("把 B 站的三个视频都收藏"));
+            assertTrue(store.events(session).stream().anyMatch(e->e.type.equals("turn_continued")));
+        }
+    }
+
+    @Test public void completedTurnsAreNeverContinued() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String done=controller.reserve(session,"已经做完",true);
+            store.finish(session,latestTurn(store,session),"completed","OK");
+            assertNull(controller.continuationFor(done));
+        }
+    }
+
+    @Test public void cancelledTurnsAreNeverContinued() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String stopped=controller.reserve(session,"我要停",true);
+            controller.cancel(stopped,"USER_CANCELLED");
+            store.finish(session,latestTurn(store,session),"cancelled","USER_CANCELLED");
+            assertNull(controller.continuationFor(stopped));
+        }
+    }
+
+    /** 超时是预算问题，不是用户喊停；长任务应当接着做。 */
+    @Test public void timeoutStillContinues() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String id=controller.reserve(session,"很长的任务",true);
+            controller.cancel(id,"TURN_TIMEOUT");
+            store.finish(session,latestTurn(store,session),"cancelled","TURN_TIMEOUT");
+            assertNotNull(controller.continuationFor(id));
+        }
+    }
+
+    @Test public void continuationStopsAfterTheRoundBudget() throws Exception {
+        try(SessionStore store=new SessionStore(AgentApp.get())) {
+            DshController controller=controller(store); String session=store.createSession().id;
+            String id=controller.reserve(session,"超长任务",true);
+            int rounds=0;
+            while(true) {
+                store.finish(session,latestTurn(store,session),"failed","TOOL_LIMIT");
+                String next=controller.continuationFor(controller.active()==null?id:controller.active().id);
+                if(next==null) break;
+                rounds++;
+                if(rounds>10) fail("续跑没有上限");
+            }
+            assertEquals(DshController.MAX_ROUNDS,rounds);
+        }
+    }
+
     @Test public void serviceStartFailureKeepsTheUserMessageAndReleasesAdmission() throws Exception {
         try(SessionStore store=new SessionStore(AgentApp.get())) {
             DshController controller=controller(store); String session=store.createSession().id;
