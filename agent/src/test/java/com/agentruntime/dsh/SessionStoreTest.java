@@ -39,11 +39,41 @@ public class SessionStoreTest {
             store.recoverInterrupted();
             assertEquals("interrupted",store.turnState(turn));
             assertEquals(2,store.history(session,10000).length());
-            assertTrue(store.history(session,10000).getJSONObject(1).getString("content").contains("Do not resume"));
+            String closing=store.history(session,10000).getJSONObject(1).getString("content");
+            assertTrue(closing.contains("resume only on an explicit user request"));
+            assertTrue(closing.contains("last visible screen is unknown"));
             int count=store.events(session).size(); store.recoverInterrupted();
             assertEquals(count,store.events(session).size());
             store.delete(session); assertNull(store.session(session));
         }
+    }
+
+    /**
+     * 续跑门：只挡"被拒绝 / 确认没拿到 / 结果不可用"。
+     * 普通的找不到节点、等超时、技能解析失败必须允许续跑，否则真实操作几乎续不了。
+     */
+    @Test public void continuationGateOnlyBlocksRejectedOrUnavailableOutcomes() throws Exception {
+        try(SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
+            assertFalse(unsafe(store,"NODE_NOT_FOUND",true));
+            assertFalse(unsafe(store,"WAIT_TIMEOUT",true));
+            assertFalse(unsafe(store,"SKILL_RESOLVE_FAILED",true));
+            assertTrue(unsafe(store,"USER_REJECTED",false));
+            assertTrue(unsafe(store,"CONFIRMATION_NOT_OBTAINED",false));
+            assertTrue(unsafe(store,"RESULT_UNAVAILABLE",false));
+            assertTrue(unsafe(store,"TOOL_FAILED",true));
+        }
+    }
+
+    private static boolean unsafe(SessionStore store,String code,boolean uncertain) throws Exception {
+        String session=store.createSession().id;
+        String turn=store.beginTurn(session,"fixture","tools","fixture");
+        store.append(session,turn,"tool_result",new JSONObject().put("role","tool").put("tool_call_id","call_0")
+                .put("content",new JSONObject().put("ok",false).put("code",code)
+                        .put("outcome_uncertain",uncertain).toString()));
+        boolean blocked=store.hasUnsafeToolOutcome(session,turn);
+        // 同时只允许一个 running 回合，测完就收尾，否则下一次 beginTurn 会撞唯一索引。
+        store.finish(session,turn,"completed","OK");
+        return blocked;
     }
 
     @Test public void interruptedToolCallsAreClosedWithoutClaimingTheyDidNotRun() throws Exception {

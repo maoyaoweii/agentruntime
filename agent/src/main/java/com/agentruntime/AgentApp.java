@@ -106,6 +106,7 @@ public final class AgentApp extends Application {
         visualGrounder = new VisualGrounder(screenCapturer, () -> localModels.provider());
         browserController = new BrowserController(this);
         systemBridge = new com.agentruntime.device.SystemBridge(this);
+        com.agentruntime.dsh.runtime.TurnLimits.load(this);
         actionExecutor.attach(new ExtendedCapabilities(
                 gestureBridge, screenCapturer, visualGrounder, browserController, envProbe, systemBridge,
                 new com.agentruntime.vision.OnDeviceScreenOcr(this, screenCapturer)));

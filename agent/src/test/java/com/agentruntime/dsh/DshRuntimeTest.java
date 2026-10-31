@@ -189,7 +189,10 @@ public class DshRuntimeTest {
         try(SessionStore store=new SessionStore(RuntimeEnvironment.getApplication())) {
             String session=store.createSession().id;
             String turn=new DshRuntime(store,transport).run(session,"浏览",true,provider,registry.snapshot(true),new Cancellation(5000),QUIET);
-            assertEquals("completed",store.turnState(turn)); assertEquals(1,actions.get());
+            // 滑动失败、最后一次工具不 ok：没有完成证据，不能报成功。
+            assertEquals("failed",store.turnState(turn));
+            assertEquals("GOAL_UNVERIFIED",store.turnCode(turn));
+            assertEquals(1,actions.get());
             assertTrue(store.hasUnsafeToolOutcome(session,turn));
         }
     }

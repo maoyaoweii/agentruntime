@@ -181,6 +181,9 @@ final class ChatRenderer {
                 return "模型反复提交了同一次可能改变设备的操作，已停止重复执行。请先核实当前状态再继续。";
             case "OBSERVATION_STALLED": return "连续多次读到相同画面，已暂停自动尝试。请检查目标应用是否已加载，再告诉助手如何继续。";
             case "TOOL_CALL_INVALID": return "模型的工具调用格式不正确（编号或参数不合法），请重新发送一次。";
+            case "GOAL_UNVERIFIED": return "这一轮没有可核验的完成证据，已按未完成结束。可以再发一次继续。";
+            case "BLOCKED": return "已按你看到的阻碍停下，没有把未完成当成功。";
+            case "SKIPPED_DEPENDS_ON_UNSEEN_RESULT": return "同一条回复里连发了多个屏幕动作，后面的没有执行。";
             default: return "本次回复未完成（"+code+"）。请检查网络和模型设置后重新发送。";
         }
     }

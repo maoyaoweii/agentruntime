@@ -26,7 +26,13 @@ public final class ChatProtocol {
     }
 
     public static JSONObject validate(JSONObject message,String finishReason) throws Exception {
-        if(!"stop".equals(finishReason)&&!"tool_calls".equals(finishReason)) throw new IOException("MODEL_OUTPUT_INCOMPLETE");
+        // 供应商可能返回 length / content_filter / 其它自造值。把原文状态带出去，
+        // 一律报 MODEL_OUTPUT_INCOMPLETE 会让"被截断"和"被过滤"看起来一样。
+        if(!"stop".equals(finishReason)&&!"tool_calls".equals(finishReason)) {
+            String raw=finishReason==null?"null":finishReason.trim();
+            if(!raw.matches("[A-Za-z0-9_.-]{1,40}")) raw="other";
+            throw new IOException("MODEL_OUTPUT_INCOMPLETE:"+raw);
+        }
         JSONObject clean=new JSONObject().put("role","assistant");
         Object content=message.opt("content");
         if(content!=null&&content!=JSONObject.NULL&&!(content instanceof String)) throw new IOException("MODEL_RESPONSE_INVALID");

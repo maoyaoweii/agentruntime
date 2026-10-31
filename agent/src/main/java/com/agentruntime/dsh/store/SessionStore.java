@@ -162,7 +162,9 @@ public final class SessionStore extends SQLiteOpenHelper {
         boolean budget=("failed".equals(state)&&("MODEL_STEP_LIMIT".equals(code)||"TOOL_LIMIT".equals(code)))
                 ||("cancelled".equals(state)&&"TURN_TIMEOUT".equals(code));
         String next=budget?"Continue only if the app explicitly starts a continuation of this request. Do not repeat rejected or uncertain actions; verify their outcomes first."
-                :"Do not resume or repeat this task without a new user request.";
+                :("interrupted".equals(state)
+                    ?"The process was killed mid-task. The last visible screen is unknown and no action may be replayed automatically; resume only on an explicit user request, and read the screen first."
+                    :"Do not resume or repeat this task without a new user request.");
         appendInternal(db,session,turn,"assistant_message",new JSONObject().put("role","assistant").put("reasoning_content","")
                 .put("content","[DSH Runtime] This turn ended: "+state+" ("+code+"). Completed tool results remain valid. "+next));
     }
@@ -187,7 +189,20 @@ public final class SessionStore extends SQLiteOpenHelper {
         }
     }
 
-    /** Refuse automatic continuation when an action was rejected or may already have taken effect. */
+    /**
+     * 这些失败是"看得见的失败"：没有副作用，也没有不确定状态，续跑是安全的。
+     *
+     * <p>以前只要 outcome_uncertain 就禁止续跑，而 run_skill 的所有失败都会被标成不确定，
+     * 结果是真实操作几乎一次都续不了。现在按失败码区分：找不到节点、等超时、技能解析失败
+     * 都可以续；用户拒绝、确认没拿到、结果不可用这三类才必须停。
+     */
+    private static final java.util.Set<String> SAFE_CONTINUE_CODES=new java.util.HashSet<>(java.util.Arrays.asList(
+            "NODE_NOT_FOUND","NODE_NOT_INTERACTABLE","WAIT_TIMEOUT","SKILL_RESOLVE_FAILED","SKILL_NOT_FOUND",
+            "A11Y_ROOT_UNAVAILABLE","SELF_WINDOW_FOCUSED","NO_INPUT_FIELD","SCREEN_EMPTY","SCREEN_OCR",
+            "TOOL_NOT_AVAILABLE","INVALID_TOOL_ARGUMENTS","UNKNOWN_SKILL","TOOL_LIMIT","SCREEN_CHANGED",
+            "BAD_SETTINGS_PAGE","BAD_PACKAGE","NOTIFICATIONS_EMPTY","SCREENSHOT_FAILED"));
+
+    /** 禁止自动续跑的不安全结果：被拒绝、确认没拿到、结果不可用。 */
     public synchronized boolean hasUnsafeToolOutcome(String session,String turn) {
         try(Cursor cursor=getReadableDatabase().rawQuery(
                 "SELECT payload FROM events WHERE session_id=? AND turn_id=? AND type='tool_result' ORDER BY seq",
@@ -196,8 +211,9 @@ public final class SessionStore extends SQLiteOpenHelper {
                 JSONObject payload=new JSONObject(cursor.getString(0));
                 JSONObject result=new JSONObject(payload.getString("content"));
                 String code=result.optString("code","");
-                if("RESULT_UNAVAILABLE".equals(code)||"USER_REJECTED".equals(code)||"CONFIRMATION_NOT_OBTAINED".equals(code)
-                        ||result.optBoolean("outcome_uncertain",false)) return true;
+                if("RESULT_UNAVAILABLE".equals(code)||"USER_REJECTED".equals(code)
+                        ||"CONFIRMATION_NOT_OBTAINED".equals(code)) return true;
+                if(result.optBoolean("outcome_uncertain",false)&&!SAFE_CONTINUE_CODES.contains(code)) return true;
             }
             return false;
         } catch(Exception e) { return true; }
@@ -261,6 +277,31 @@ public final class SessionStore extends SQLiteOpenHelper {
     /** Input is newest first; original events remain untouched in the database. */
     private static List<JSONObject> compactLatestTurn(List<JSONObject> messages) throws JSONException {
         List<JSONObject> compacted=new ArrayList<>(); boolean keptRecentDetail=false;
+        // tool 结果本身没有技能名：从同一回合的 assistant tool_calls 里补回来。
+        // 压缩后至少留下"哪一步、什么参数、成没成、什么码"，否则续跑只能靠猜。
+        java.util.Map<String,String> callInfo=new java.util.HashMap<>();
+        for(JSONObject message:messages) {
+            if(!"assistant".equals(message.optString("role"))) continue;
+            JSONArray calls=message.optJSONArray("tool_calls");
+            if(calls==null) continue;
+            for(int i=0;i<calls.length();i++) {
+                JSONObject call=calls.optJSONObject(i);
+                if(call==null) continue;
+                JSONObject function=call.optJSONObject("function");
+                if(function==null) continue;
+                String name=function.optString("name","");
+                String args=function.optString("arguments","{}");
+                String info=name;
+                try {
+                    JSONObject parsed=new JSONObject(args);
+                    if("run_skill".equals(name)) info="run_skill:"+parsed.optString("skill_id","");
+                    String summary=parsed.toString();
+                    if(summary.length()>160) summary=summary.substring(0,160)+"…";
+                    info=info+" "+summary;
+                } catch(JSONException ignored) { }
+                callInfo.put(call.optString("id",""),info);
+            }
+        }
         for(JSONObject message:messages) {
             JSONObject copy=new JSONObject(message.toString());
             if("tool".equals(copy.optString("role"))) {
@@ -280,6 +321,8 @@ public final class SessionStore extends SQLiteOpenHelper {
                         data=original.get("data"); String text=data instanceof String?(String)data:data.toString();
                         if(text.length()<=limit) result.put("data",data); else result.put("data_excerpt",historyClip(text,limit));
                     }
+                    String call=callInfo.get(copy.optString("tool_call_id",""));
+                    if(call!=null) result.put("step",historyClip(call,220));
                     result.put("history_compacted",true);
                     result.put("history_note","较早工具结果已压缩；完整结果仍保存在本机会话中。");
                     copy.put("content",result.toString());

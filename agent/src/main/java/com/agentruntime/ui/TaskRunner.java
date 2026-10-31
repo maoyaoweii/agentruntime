@@ -188,8 +188,10 @@ public final class TaskRunner {
         limits.put("timeout_seconds", 300);
         taskJson.put("limits", limits);
 
+        // 曾经写成 owner==null：DSH 传了 cancellation，于是重规划永远是关的。
+        // 真正的闸门在 AgentRuntime：RISK_REJECTED / APP_NOT_ALLOWED / 确认失败仍然不重规划。
         return runExclusive(autoConfirm,cancellation -> execute(DslParser.parseTask(taskJson.toString()),
-                autoConfirm,owner==null,cancellation,true),owner);
+                autoConfirm,true,cancellation,true),owner);
     }
 
     public static File writeResult(com.agentruntime.AgentApp app, JSONObject result) throws IOException {

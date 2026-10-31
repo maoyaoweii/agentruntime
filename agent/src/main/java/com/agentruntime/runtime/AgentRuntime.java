@@ -206,14 +206,11 @@ public final class AgentRuntime {
                         return finish(task, "STEP_BUDGET_EXCEEDED", start, stepLog,
                                 executedActions, succeededSteps, failedSteps);
                     }
-                    // 用户/策略拒绝不是可恢复执行故障；重试只会重复请求同一确认。
-                    if (allowReplan && !"APP_NOT_ALLOWED".equals(outcome.code)
-                            && !"RISK_REJECTED".equals(outcome.code)
-                            && replanBudget.tryConsume()) {
-                        // 有限次数恢复：重新同步状态后重试一次该步骤
+                    // 原样重试只留给超时抖动；其余失败要么真重规划（换技能/换参数），要么带着证据失败。
+                    if (isTimeoutJitter(outcome.code) && allowReplan && replanBudget.tryConsume()) {
                         if (listener != null) {
                             try {
-                                listener.onReplan("步骤失败 " + outcome.code + "，重试一次");
+                                listener.onReplan("步骤超时 " + outcome.code + "，原样重试一次");
                             } catch (RuntimeException ignored) {
                             }
                         }
@@ -234,8 +231,7 @@ public final class AgentRuntime {
                             succeededSteps++;
                             failedSteps--;
                         } else {
-                            if ("TASK_TIMEOUT".equals(retry.code)
-                                    || "DEADLINE_OR_CANCEL".equals(retry.code)) {
+                            if ("TASK_TIMEOUT".equals(retry.code) || "DEADLINE_OR_CANCEL".equals(retry.code)) {
                                 return finish(task, cancelRequested.get() ? "CANCELLED" : "TIMEOUT",
                                         start, stepLog, executedActions, succeededSteps, failedSteps);
                             }
@@ -243,6 +239,24 @@ public final class AgentRuntime {
                                 return finish(task, "STEP_BUDGET_EXCEEDED", start, stepLog,
                                         executedActions, succeededSteps, failedSteps);
                             }
+                            return finish(task, "FAILED", start, stepLog, executedActions, succeededSteps, failedSteps);
+                        }
+                    } else if (allowReplan && replanAllowed(outcome.code) && replanBudget.tryConsume()) {
+                        if (listener != null) {
+                            try {
+                                listener.onReplan("步骤失败 " + outcome.code + "，重新规划");
+                            } catch (RuntimeException ignored) {
+                            }
+                        }
+                        StepOutcome replanned = replanAndRun(task, step, outcome, autoConfirm, deadline,
+                                Math.max(0, task.limits.maxSteps - executedActions));
+                        executedActions += replanned.actionsExecuted;
+                        launchedAnyApp |= replanned.launchedApp;
+                        stepLog.put(replanned.log);
+                        if (replanned.ok) {
+                            succeededSteps++;
+                            failedSteps--;
+                        } else {
                             return finish(task, "FAILED", start, stepLog, executedActions, succeededSteps, failedSteps);
                         }
                     } else {
@@ -328,6 +342,108 @@ public final class AgentRuntime {
             stepLog.put(err);
             return finish(task, "ERROR", start, stepLog, executedActions, succeededSteps, failedSteps);
         }
+    }
+
+    /** 只有"等一等就好"的超时才原样重试；语义失败重试同一步没有意义。 */
+    private static boolean isTimeoutJitter(String code) {
+        return "TASK_TIMEOUT".equals(code) || "EXEC_TIMEOUT".equals(code)
+                || "TIMEOUT".equals(code) || "STEP_TIMEOUT".equals(code);
+    }
+
+    /** 用户/策略拒绝不重规划：再问一次还是同一个答案。 */
+    private static boolean replanAllowed(String code) {
+        return !("APP_NOT_ALLOWED".equals(code) || "RISK_REJECTED".equals(code)
+                || "USER_REJECTED".equals(code) || "CONFIRMATION_NOT_OBTAINED".equals(code)
+                || "STEP_BUDGET_EXCEEDED".equals(code) || "DEADLINE_OR_CANCEL".equals(code));
+    }
+
+    /**
+     * 真重规划：让规划器在失败上下文里换技能或换参数，然后执行新计划。
+     *
+     * <p>旧实现是把同一步原样再跑一遍——参数没变、技能没变，失败码自然也没变。
+     * 这里禁止"重规划成完全相同的单步"，并把失败码、前台包名、最后一屏摘要一路带下去。
+     */
+    private StepOutcome replanAndRun(TaskSpec task, TaskSpec.TaskStep failed, StepOutcome failure,
+                                     boolean autoConfirm, long deadline, int actionBudget) throws JSONException {
+        StepOutcome out = new StepOutcome();
+        JSONObject log = new JSONObject();
+        log.put("replan", true);
+        log.put("failed_skill", failed.skillId);
+        log.put("failure_code", failure.code);
+        JSONArray steps = new JSONArray();
+        log.put("steps", steps);
+        out.log = log;
+        out.code = "REPLAN_FAILED";
+
+        String foreground = "";
+        String screen = "";
+        AgentAccessibilityService service = AgentAccessibilityService.getInstance();
+        com.agentruntime.state.WorldState state =
+                service != null ? service.snapshot("replan") : stateEngine.current();
+        if (state != null) {
+            foreground = state.foregroundPackage == null ? "" : state.foregroundPackage;
+            screen = visibleSummary(state);
+        }
+        log.put("foreground", foreground);
+        log.put("last_screen", screen);
+
+        String hint = "失败码 " + failure.code
+                + (foreground.isEmpty() ? "" : "；前台包名 " + foreground)
+                + (screen.isEmpty() ? "" : "；最后一屏 " + screen);
+        TaskSpec replanned = null;
+        try {
+            replanned = modelRouter.replan(task.goal, hint, java.util.Collections.singletonList("accessibility"));
+        } catch (Exception e) {
+            log.put("replan_error", "planner_unavailable");
+        }
+        if (replanned == null || replanned.steps.isEmpty()) {
+            if (!log.has("replan_error")) log.put("replan_error", "no_plan");
+            return out;
+        }
+        boolean identical = replanned.steps.size() == 1
+                && replanned.steps.get(0).skillId.equals(failed.skillId)
+                && String.valueOf(replanned.steps.get(0).args).equals(String.valueOf(failed.args));
+        if (identical) {
+            log.put("replan_error", "identical_step");
+            return out;
+        }
+        int budget = actionBudget;
+        boolean allOk = true;
+        String lastCode = "OK";
+        for (TaskSpec.TaskStep step : replanned.steps) {
+            if (budget <= 0) {
+                allOk = false;
+                lastCode = "STEP_BUDGET_EXCEEDED";
+                break;
+            }
+            StepOutcome one = runStep(task, step, autoConfirm, deadline, budget);
+            steps.put(one.log);
+            budget -= one.actionsExecuted;
+            out.actionsExecuted += one.actionsExecuted;
+            out.launchedApp |= one.launchedApp;
+            lastCode = one.code;
+            if (!one.ok) {
+                allOk = false;
+                break;
+            }
+        }
+        out.ok = allOk;
+        out.code = allOk ? "REPLAN_OK" : lastCode;
+        return out;
+    }
+
+    private static String visibleSummary(com.agentruntime.state.WorldState state) {
+        if (state == null || state.root == null) return "";
+        StringBuilder text = new StringBuilder();
+        for (com.agentruntime.state.UiNode node : state.root.flat()) {
+            String label = node.text != null && !node.text.trim().isEmpty()
+                    ? node.text.trim() : node.contentDescription;
+            if (label == null || label.trim().isEmpty()) continue;
+            if (text.length() + label.length() > 160) break;
+            if (text.length() > 0) text.append(" / ");
+            text.append(label.trim());
+        }
+        return text.toString();
     }
 
     private static final class StepOutcome {

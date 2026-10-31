@@ -22,7 +22,9 @@ public final class DshController {
         View(Job job) { id=job.id; session=job.session; status=job.status; live=job.live.toString(); }
     }
     /** 一轮工具预算用完时自动续跑的最大轮数；用户主动停止永远优先。 */
-    public static final int MAX_ROUNDS=3;
+    public static final int MAX_ROUNDS=6;
+    /** 空闲多久算卡死。工具在跑时不计时：技能内部超时本身可以到 300 秒。 */
+    static final long IDLE_LIMIT_MS=180000;
 
     private static final class Job {
         final String id=UUID.randomUUID().toString(),session,text,turn,goal,rootId;
@@ -33,6 +35,8 @@ public final class DshController {
         final Cancellation cancellation=new Cancellation(300000);
         final StringBuilder live=new StringBuilder();
         String status="准备开始…"; boolean started,stopRequested;
+        volatile boolean inTool;
+        volatile long lastActivity=System.currentTimeMillis();
         Job(String session,String text,boolean tools,ProviderConfig.Snapshot provider,PluginRegistry.Snapshot plugins,String turn,int round,String goal,String rootId) {
             this.session=session; this.text=text; this.tools=tools; this.provider=provider; this.plugins=plugins; this.turn=turn;
             this.round=round; this.goal=goal; this.rootId=rootId==null?id:rootId;
@@ -81,14 +85,22 @@ public final class DshController {
             if(active==null||!active.id.equals(id)||active.started) return false;
             job=active; job.started=true;
         }
-        ScheduledFuture<?> deadline=timer.schedule(()->cancel(job.id,"TURN_TIMEOUT"),180,TimeUnit.SECONDS);
+        // 墙钟只用来兜"空闲无进展"，不是整单死刑：工具在执行时一律不计时。
+        ScheduledFuture<?> deadline=timer.scheduleWithFixedDelay(()->{
+            if(job.inTool) return;
+            if(System.currentTimeMillis()-job.lastActivity<IDLE_LIMIT_MS) return;
+            cancel(job.id,"TURN_TIMEOUT");
+        },15,15,TimeUnit.SECONDS);
         Thread worker=new Thread(()->{
             try {
                 runtime.runAdmitted(job.session,job.turn,job.text,job.provider,job.plugins,job.cancellation,new DshRuntime.Listener() {
-                    @Override public void status(String text) { synchronized(DshController.this) { job.status=text; changed(); } }
-                    @Override public void delta(String text) { synchronized(DshController.this) { if(job.live.length()<65536) job.live.append(text); changed(); } }
-                    @Override public void settled() { synchronized(DshController.this) { job.live.setLength(0); changed(); } }
-                });
+                    @Override public void status(String text) { job.lastActivity=System.currentTimeMillis(); synchronized(DshController.this) { job.status=text; changed(); } }
+                    @Override public void delta(String text) { job.lastActivity=System.currentTimeMillis(); synchronized(DshController.this) { if(job.live.length()<65536) job.live.append(text); changed(); } }
+                    @Override public void settled() { job.lastActivity=System.currentTimeMillis(); synchronized(DshController.this) { job.live.setLength(0); changed(); } }
+                    @Override public void tool(String name,boolean running) {
+                        job.inTool=running; job.lastActivity=System.currentTimeMillis();
+                    }
+                },job.tools);
             } catch(Exception e) {
                 synchronized(DshController.this) { lastError=job.cancellation.flag.get()?"操作已停止":DshRuntime.errorCode(e); }
             } finally {
@@ -125,10 +137,13 @@ public final class DshController {
         try {
             ProviderConfig.Snapshot settings=provider.snapshot();
             PluginRegistry.Snapshot admitted=plugins.snapshot(prev.tools);
-            String prefix="[DSH Runtime] 上一轮因为工具预算用完被中断，目标还没完成，请接着做。\n目标：";
-            String suffix="\n要求：先读屏确认当前界面，不要重复已经成功的步骤；不要重述已完成的部分；"
-                    +"如果连续两次尝试都失败，换一种路径（换技能、换入口、先回桌面再进）；"
-                    +"确实做不到时，说清楚缺哪项能力、你试过什么，再结束。";
+            String prefix="[DSH Runtime] 上一轮因为预算中断，目标还没完成。这是续跑，不是新任务。\n目标：";
+            String suffix="\n以工具结果为准。history_compacted 的正文可能被截断，不要凭印象补全。\n"
+                    +"先 sys.read_screen 一次。\n"
+                    +"不要重放已成功或 outcome_uncertain 或 RESULT_UNAVAILABLE 的动作。\n"
+                    +"这次回复仍然只调用一个依赖屏幕的工具。\n"
+                    +"两条不同路径都失败后就停止，说明缺什么。\n"
+                    +"读屏证据对上目标再结束；对不上就说明卡在哪一屏。";
             String goal=prev.goal,marker="…（完整目标见上一轮消息）";
             int maxGoal=SessionStore.MAX_INPUT-prefix.length()-suffix.length();
             if(goal.length()>maxGoal) {
