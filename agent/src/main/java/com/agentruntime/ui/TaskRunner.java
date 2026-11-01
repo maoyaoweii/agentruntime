@@ -5,6 +5,10 @@ import com.agentruntime.agent.BuildConfig;
 import com.agentruntime.dsl.ActionSpec;
 import com.agentruntime.dsl.DslParser;
 import com.agentruntime.dsl.TaskSpec;
+import com.agentruntime.goal.DeviceGoalScreen;
+import com.agentruntime.goal.GoalCard;
+import com.agentruntime.goal.GoalMainLoop;
+import com.agentruntime.goal.GoalPathStore;
 import com.agentruntime.executor.AppLaunchPolicy;
 import com.agentruntime.runtime.AgentRuntime;
 import com.agentruntime.runtime.TaskBus;
@@ -46,7 +50,38 @@ public final class TaskRunner {
     }
 
     public static AgentRuntime.TaskResult runGoal(String goal, boolean autoConfirm, boolean allowReplan) throws Exception {
-        return runExclusive(autoConfirm, cancellation -> planAndRun(goal, autoConfirm, allowReplan, cancellation));
+        return runExclusive(autoConfirm, cancellation -> runGoalCard(goal, autoConfirm, allowReplan, cancellation));
+    }
+
+    /**
+     * 目标模式先走主循环：它负责把一件事做完（读屏、换招、核对、存路径）。
+     *
+     * <p>只有"这不是一个可执行的请求"（提问、解释、没有可观察标准）才回落到模型规划，
+     * 其余情况不允许主循环失败后偷偷换成另一套流程再报成功。
+     */
+    private static AgentRuntime.TaskResult runGoalCard(String goal, boolean autoConfirm,
+                                                       boolean allowReplan, AtomicBoolean cancellation) throws Exception {
+        AgentApp app = AgentApp.get();
+        GoalMainLoop loop = new GoalMainLoop(
+                new DeviceGoalScreen(app, app.stateEngine()),
+                GoalPathStore.preferences(app),
+                new GoalMainLoop.Listener() {
+                    @Override public void onRound(int round, GoalMainLoop.Tactic tactic, String code) {
+                        TaskBus.get().info("goal", "第 " + round + " 轮 · " + tactic + " · " + code);
+                    }
+                    @Override public void onState(GoalCard card) { }
+                });
+        GoalCard card = loop.run(goal);
+        if (cancellation.get()) return cancelled();
+        String code = card.failureCode();
+        if (card.state() == GoalCard.State.FAILED
+                && ("NOT_AN_ACTION".equals(code) || "NO_CRITERIA".equals(code))) {
+            return planAndRun(goal, autoConfirm, allowReplan, cancellation);
+        }
+        String status = card.state() == GoalCard.State.SUCCEEDED ? "SUCCESS"
+                : card.state() == GoalCard.State.HELD ? "HELD" : "FAILED";
+        TaskBus.get().info("goal", "主循环结束：" + status + "（" + card.outcome().name() + "）");
+        return new AgentRuntime.TaskResult(card.id(), status, card.toJson());
     }
 
     private static AgentRuntime.TaskResult planAndRun(String goal, boolean autoConfirm,

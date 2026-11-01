@@ -77,9 +77,22 @@ public final class OnDeviceScreenOcr implements ScreenTextOcr {
                     } else if (!completed.isSuccessful() || completed.getResult() == null) {
                         result.set(error("OCR_FAILED"));
                     } else {
-                        String text = completed.getResult().getText();
+                        Text recognized = completed.getResult();
+                        String text = recognized.getText();
+                        java.util.List<ScreenTextBox> boxes = new java.util.ArrayList<>();
+                        // 识别发生在裁切后的图上：先加回裁切原点，再按截图缩放还原到屏幕坐标。
+                        float scale = frame.imageWidth / (float) Math.max(1, frame.screenWidth);
+                        for (Text.TextBlock block : recognized.getTextBlocks()) {
+                            android.graphics.Rect box = block.getBoundingBox();
+                            if (box == null) continue;
+                            int left = Math.round((box.left + bounds[0]) / scale);
+                            int top = Math.round((box.top + bounds[1]) / scale);
+                            int right = Math.round((box.right + bounds[0]) / scale);
+                            int bottom = Math.round((box.bottom + bounds[1]) / scale);
+                            boxes.add(new ScreenTextBox(block.getText(), left, top, right, bottom));
+                        }
                         result.set(text == null || text.trim().isEmpty()
-                                ? error("OCR_EMPTY") : new Result("SCREEN_OCR", text.trim()));
+                                ? error("OCR_EMPTY") : new Result("SCREEN_OCR", text.trim(), boxes));
                     }
                 } finally {
                     try { taskBitmap.recycle(); }

@@ -26,6 +26,8 @@ public final class DshGraph {
         });
         for(MobilePlugin plugin:PhonePlugins.create(app)) plugins.register(plugin);
         workspace=new Workspace(new File(app.getFilesDir(),"dsh-workspace"));
-        controller=new DshController(app,sessions,provider,plugins,new DshRuntime(sessions,new ChatClient()));
+        com.agentruntime.dsh.runtime.DshRuntime runtime=new DshRuntime(sessions,new ChatClient())
+                .knowledge(pkg->com.agentruntime.goal.GoalKnowledge.forPrompt(app,pkg));
+        controller=new DshController(app,sessions,provider,plugins,runtime);
     }
 }
