@@ -1,6 +1,3 @@
-/*
- * Inspired by Mika (Apache-2.0, https://github.com/wangzan101/mika)
- */
 package com.agentruntime.vision;
 
 /** 识别到的一块文字及其截图像素位置。主循环用它决定"按文字位置点哪里"。 */

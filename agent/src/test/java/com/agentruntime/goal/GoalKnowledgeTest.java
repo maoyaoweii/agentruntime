@@ -1,6 +1,3 @@
-/*
- * Inspired by Mika (Apache-2.0, https://github.com/wangzan101/mika)
- */
 package com.agentruntime.goal;
 
 import android.app.Application;
