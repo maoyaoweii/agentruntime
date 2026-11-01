@@ -767,7 +767,9 @@ public final class ActionExecutor {
             return ExecResult.ok("SCREEN_EMPTY",
                     "无障碍没有返回可读文字（package=" + state.foregroundPackage
                             + "，节点数=" + state.nodeCount() + "）。原因可能是页面加载或系统没有提供内容，不能据此断定应用禁止读屏。"
-                            + "可在 DSH 的连接与设置中开启「画面文字识别」，再回到目标页面重试。",
+                            + (com.agentruntime.vision.ScreenOcrSettings.enabled(appContext)
+                                ? "画面文字识别已开启但没有成功：请看返回码——SCREENSHOT_SECURE 表示系统保护了这个窗口，OCR_EMPTY 表示截到了图但没识别出字。"
+                                : "「画面文字识别」当前被关闭，可在 DSH 的连接与设置中重新开启后重试。"),
                     epoch, elapsed(start));
         }
         String header = "package=" + state.foregroundPackage

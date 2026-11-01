@@ -89,6 +89,7 @@ public final class GoalMainLoop {
             notifyState(card);
             return card;
         }
+        if (plan.readOnly) return readGoal(card, plan);
         List<GoalCard.PathStep> saved = pathStore == null ? new ArrayList<>() : pathStore.load(plan.key);
         card.restorePath(saved);
         int pathCursor = 0;
@@ -174,6 +175,42 @@ public final class GoalMainLoop {
             }
         }
         if (card.state() == GoalCard.State.RUNNING) card.fail("TACTICS_EXHAUSTED", screen.read().packageName);
+        notifyState(card);
+        return card;
+    }
+
+    /**
+     * 只读目标：读消息、看聊天列表。
+     *
+     * <p>不点任何东西，只要拿到可见文字；无障碍读不到就同一轮改看图，还读不到就往下翻一屏再读，
+     * 连续几屏都没字才 READ_EMPTY。禁止把"没读到"说成"读到了"。
+     */
+    private GoalCard readGoal(GoalCard card, GoalInterpreter.Plan plan) {
+        for (int round = 1; round <= 4; round++) {
+            card.round();
+            GoalScreen.Facts facts = observe(plan);
+            if (plan.targetPackage != null && !plan.targetPackage.equals(facts.packageName)) {
+                if (!screen.virtualDisplayAvailable()) screen.yieldForeground();
+                screen.launchByPackage(plan.targetPackage);
+                card.record(round, "LAUNCH_BY_PACKAGE", "LAUNCH_SENT", facts.packageName, "", plan.targetPackage);
+                GoalScreen.Facts after = screen.read();
+                if (plan.targetPackage.equals(after.packageName)) {
+                    card.record(round, "LAUNCH_BY_PACKAGE", "LAUNCH_OK", facts.packageName, after.packageName, "");
+                }
+                continue;
+            }
+            String text = facts.visibleText.trim();
+            if (text.length() > 0) {
+                card.record(round, "READ", "READ_OK", facts.packageName, facts.packageName,
+                        text.length() + " 字，来源=" + facts.source);
+                card.succeed("读到 " + text.length() + " 字（来源=" + facts.source + "，前台=" + facts.packageName + "）");
+                notifyState(card);
+                return card;
+            }
+            card.record(round, "READ", "READ_EMPTY", facts.packageName, facts.packageName, "没有可读文字");
+            if (!screen.scrollDown()) break;
+        }
+        card.fail("READ_EMPTY", screen.read().packageName);
         notifyState(card);
         return card;
     }

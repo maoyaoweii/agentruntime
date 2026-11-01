@@ -67,11 +67,13 @@ public class RoutineSkillTest {
         SkillEngine skills = new SkillEngine(RuntimeEnvironment.getApplication());
 
         assertTrue(skills.hasSkill("sys.open_app"));
+        assertTrue(skills.hasSkill("sys.scroll_read"));
         assertTrue(skills.hasSkill("sys.press_key"));
         assertTrue(skills.hasSkill("sys.open_app_info"));
         assertTrue(skills.hasSkill("sys.force_stop"));
 
         assertEquals(java.util.Collections.singletonList("package"), skills.manifest("sys.open_app").requiredArgs);
+        assertEquals(java.util.Collections.singletonList("direction"), skills.manifest("sys.scroll_read").requiredArgs);
         assertEquals(java.util.Collections.singletonList("key"), skills.manifest("sys.press_key").requiredArgs);
         assertEquals(java.util.Collections.singletonList("package"), skills.manifest("sys.open_app_info").requiredArgs);
         assertEquals(java.util.Collections.singletonList("package"), skills.manifest("sys.force_stop").requiredArgs);

@@ -10,9 +10,13 @@ public final class ScreenOcrSettings {
 
     private ScreenOcrSettings() {}
 
+    /**
+     * 默认开启：微信这类自绘界面经常只返回两三个节点、零文字，
+     * 每次都要用户先去设置里打开等于把活退回给用户。关掉仍然有效。
+     */
     public static boolean enabled(Context context) {
         return context != null && context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getBoolean(ENABLED, false);
+                .getBoolean(ENABLED, true);
     }
 
     public static long revision(Context context) {

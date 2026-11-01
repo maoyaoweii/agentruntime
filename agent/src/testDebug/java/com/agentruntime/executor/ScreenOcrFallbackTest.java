@@ -37,7 +37,18 @@ public class ScreenOcrFallbackTest {
     }
     @After public void cleanup() { context.getSharedPreferences("dsh_screen_ocr", 0).edit().clear().commit(); }
 
-    @Test public void defaultOffNeverCapturesAndExplainsTheOption() throws Exception {
+    /** 默认开启：空树就该自己看图，不能要求用户先去设置里打开。 */
+    @Test public void defaultOnCapturesWithoutAskingForASetting() throws Exception {
+        context.getSharedPreferences("dsh_screen_ocr",android.content.Context.MODE_PRIVATE).edit().clear().commit();
+        AtomicInteger calls=new AtomicInteger();
+        ExecResult result=run((s,c,d)->{ calls.incrementAndGet(); return new ScreenTextOcr.Result("SCREEN_OCR","可见内容"); },null);
+        assertEquals("SCREEN_OCR",result.code);
+        assertEquals(1,calls.get());
+    }
+
+    /** 用户显式关掉后仍然不截图，并说明是关掉的。 */
+    @Test public void explicitlyDisabledNeverCapturesAndSaysSo() throws Exception {
+        ScreenOcrSettings.setEnabled(context,false);
         AtomicInteger calls=new AtomicInteger();
         ExecResult result=run((s,c,d)->{ calls.incrementAndGet(); return new ScreenTextOcr.Result("SCREEN_OCR","private"); },null);
         assertEquals("SCREEN_EMPTY",result.code);

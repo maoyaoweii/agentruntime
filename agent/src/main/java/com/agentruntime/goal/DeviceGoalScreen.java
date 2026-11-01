@@ -94,6 +94,13 @@ public final class DeviceGoalScreen implements GoalScreen {
         return gestures.tap(x, y, size[0], size[1], 5000).ok();
     }
 
+    @Override public boolean scrollDown() {
+        int[] size = screenSize();
+        if (size[0] <= 0) return false;
+        return gestures.swipe(size[0] / 2, (int) (size[1] * 0.78),
+                size[0] / 2, (int) (size[1] * 0.28), 320, size[0], size[1], 4000).ok();
+    }
+
     @Override public boolean yieldForeground() {
         AppWindow.yieldDevice(450);
         return true;

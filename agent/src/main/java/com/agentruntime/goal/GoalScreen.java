@@ -32,6 +32,9 @@ public interface GoalScreen {
     /** 把聊天界面让到后台，让目标应用回到前台。 */
     boolean yieldForeground();
 
+    /** 往下翻一屏（读长列表用）。默认不支持。 */
+    default boolean scrollDown() { return false; }
+
     /** 截图 + 本机文字识别，同一轮里完成。 */
     OcrResult readImage();
 
@@ -89,8 +92,15 @@ public interface GoalScreen {
         public final List<OcrItem> ocrItems;
         public final String signature;
         public final String visibleText;
+        /** 文字来源：a11y（无障碍树）或 ocr（本机识图）。 */
+        public final String source;
 
         public Facts(String packageName, String windowTitle, List<UiNode> nodes, List<OcrItem> ocrItems) {
+            this(packageName, windowTitle, nodes, ocrItems, ocrItems.isEmpty() ? "a11y" : "ocr");
+        }
+
+        public Facts(String packageName, String windowTitle, List<UiNode> nodes, List<OcrItem> ocrItems,
+                     String source) {
             this.packageName = packageName == null ? "" : packageName;
             this.windowTitle = windowTitle == null ? "" : windowTitle;
             this.nodes = nodes == null ? Collections.emptyList() : new ArrayList<>(nodes);
@@ -114,6 +124,7 @@ public interface GoalScreen {
             }
             this.visibleText = text.toString();
             this.signature = signature.toString();
+            this.source = source == null ? "a11y" : source;
         }
 
         /** 树为空或几乎没有字：这一轮就要改看图，而不是等用户去开开关。 */

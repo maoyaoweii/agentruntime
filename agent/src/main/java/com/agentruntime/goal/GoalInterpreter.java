@@ -33,6 +33,10 @@ public final class GoalInterpreter {
     };
 
     private static final String[] PAYMENT = {"付款", "支付", "转账", "下单", "购买", "充值", "打赏", "发红包"};
+    /** 只读意图：读消息、看看列表、有什么新内容。 */
+    private static final String[] READ_WORDS = {"读一下", "读读", "读消息", "看看", "看一下", "有什么消息", "新消息", "消息记录"};
+    /** 有这些词就不是只读，要做动作。 */
+    private static final String[] WRITE_WORDS = {"发送", "发给", "回复", "填写", "输入", "点开", "关掉", "删除", "付款", "转账"};
     private static final String[] QUESTION = {"怎么", "为什么", "能不能", "可不可以", "是否", "是什么", "会不会", "吗？", "吗?"};
 
     public static final class Plan {
@@ -42,15 +46,18 @@ public final class GoalInterpreter {
         public final String key;
         public final boolean question;
         public final boolean payment;
+        /** 只要读，不要点：读消息、看看聊天列表都属于这一类。 */
+        public final boolean readOnly;
 
         Plan(String criteria, String targetPackage, String targetLabel, String key,
-             boolean question, boolean payment) {
+             boolean question, boolean payment, boolean readOnly) {
             this.criteria = criteria;
             this.targetPackage = targetPackage;
             this.targetLabel = targetLabel;
             this.key = key;
             this.question = question;
             this.payment = payment;
+            this.readOnly = readOnly;
         }
     }
 
@@ -82,11 +89,13 @@ public final class GoalInterpreter {
             if (resolved != null) pkg = resolved;
         }
 
+        boolean readOnly = containsAny(text, READ_WORDS) && !containsAny(text, WRITE_WORDS);
         String criteria = "";
-        if (pkg != null) criteria = "前台包名是 " + pkg;
+        if (readOnly) criteria = "从「" + (label == null ? "当前界面" : label) + "」读到可见文字";
+        else if (pkg != null) criteria = "前台包名是 " + pkg;
         else if (label != null) criteria = "离开桌面后，屏幕上出现「" + label + "」";
         String key = pkg != null ? "app:" + pkg : label != null ? "label:" + label : "request:" + text;
-        return new Plan(criteria, pkg, label, key, question, payment);
+        return new Plan(criteria, pkg, label, key, question, payment, readOnly);
     }
 
     /** "打开小米商城" 这类：取动作词后面的 2~6 个字当候选名。 */

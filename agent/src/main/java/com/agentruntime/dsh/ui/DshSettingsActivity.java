@@ -102,7 +102,7 @@ public final class DshSettingsActivity extends Activity {
         Switch enabled=UiKit.toggle(this,"画面文字识别",com.agentruntime.vision.ScreenOcrSettings.enabled(this));
         enabled.setId(com.agentruntime.agent.R.id.dsh_screen_ocr); enabled.setSaveEnabled(false); label.setLabelFor(enabled.getId());
         row.addView(label,new LinearLayout.LayoutParams(0,-2,1)); row.addView(enabled); card.addView(row); UiKit.gap(card,8);
-        card.addView(UiKit.text(this,"无障碍读不到文字时，可在手机本地识别当前画面（Android 11 及以上）。画面可能包含悬浮内容、隐私或明文密码，受保护的窗口可能无法读取。识别文字会保存到会话并发送给你配置的模型服务；Google ML Kit 可能发送性能指标。",12,UiKit.MUTED));
+        card.addView(UiKit.text(this,"默认开启：无障碍读不到文字时，在手机本地识别当前画面（Android 11 及以上），不需要你先去开任何系统开关。画面可能包含隐私或明文密码，受保护的窗口无法读取；识别文字会保存到会话并发送给你配置的模型服务。不需要时可在此关闭。Google ML Kit 可能发送性能指标。",12,UiKit.MUTED));
         boolean[] reverting={false};
         enabled.setOnCheckedChangeListener((button,checked)->{
             if(reverting[0]) return;

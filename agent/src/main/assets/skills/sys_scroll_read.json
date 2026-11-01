@@ -1,0 +1,16 @@
+{
+  "skill_id": "sys.scroll_read",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["direction"],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "往下翻一屏再读一次，用于微信/聊天列表这类长列表。direction 取 up 或 down；翻完读到的仍是同一屏说明到底了。读不到文字时先用 sys.read_screen 看返回码，不要重复盲翻",
+  "postconditions": [],
+  "steps": [
+    {"action": "swipe", "params": {"direction": "${direction}", "distance_pct": 55, "duration_ms": 320}, "timeout_ms": 8000},
+    {"action": "wait_ms", "params": {"ms": 600}, "timeout_ms": 3000},
+    {"action": "read_screen", "params": {"max_chars": 4000}, "timeout_ms": 22000}
+  ]
+}

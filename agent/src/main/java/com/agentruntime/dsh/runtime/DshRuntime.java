@@ -44,6 +44,7 @@ public final class DshRuntime {
             "- 知道包名时：open_app 之后必须 read_screen，确认前台不是这个聊天。",
             "- 只点最新一次读屏里出现过的文字。",
             "- sys.observe 和 device_status 不是屏幕。sys.screenshot 你看不到像素。",
+            "- sys.read_screen 在无障碍读不到文字时会自动改用本机识图（默认开启）。返回 SCREEN_OCR 就是识图结果：可能错字、乱序，不能当可点击证据；返回 SCREEN_EMPTY/OCR_EMPTY/SCREENSHOT_SECURE 时按码说明，不要让用户去开开关。",
             "- SCREEN_OCR 可能错字、乱序，也不能说明可点击。不准猜坐标。",
             "- press_key 只能是 back、home、recents、notifications、quick_settings、power_dialog、lock_screen、screenshot。",
             "- swipe 的 direction 只能是 up、down、left、right。",

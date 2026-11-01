@@ -21,7 +21,7 @@ public class GoalMainLoopTest {
 
     private static final String SELF = "com.agentruntime.agent";
 
-    static final class Fake implements GoalScreen {
+    static class Fake implements GoalScreen {
         String self = SELF;
         String pkg = "com.example.app";
         List<UiNode> nodes = new ArrayList<>();
@@ -30,7 +30,7 @@ public class GoalMainLoopTest {
         boolean launchChanges;
         String afterLaunch;
         String pointTargetPackage;
-        int launches, ocrCalls;
+        int launches, ocrCalls, scrolling;
         boolean virtual;
         final List<UiNode> tapped = new ArrayList<>();
         final List<int[]> points = new ArrayList<>();
@@ -61,6 +61,8 @@ public class GoalMainLoopTest {
         }
 
         public boolean virtualDisplayAvailable() { return virtual; }
+
+        @Override public boolean scrollDown() { scrolling++; return false; }
 
         public String resolvePackage(String label) { return names.get(label); }
 
@@ -174,6 +176,58 @@ public class GoalMainLoopTest {
         assertTrue("无障碍点击最多两次", a11y <= 2);
         assertTrue("无障碍不行之后要换点中心", center >= 1);
         assertTrue(card.rounds() <= GoalMainLoop.MAX_ROUNDS);
+    }
+
+    /** 8. 微信只给空树：主循环同一轮改看图，读到文字才算完成。 */
+    @Test public void readGoalUsesImageWhenWechatReturnsAnEmptyTree() {
+        Fake screen = new Fake();
+        screen.pkg = "com.tencent.mm";
+        screen.ocr.add(new GoalScreen.OcrItem("软软 晚上一起吃饭吗", 40, 300, 700, 360));
+        screen.ocr.add(new GoalScreen.OcrItem("妈 记得带伞", 40, 420, 500, 480));
+
+        GoalCard card = new GoalMainLoop(screen, GoalPathStore.inMemory()).run("读一下微信消息");
+
+        assertEquals(GoalCard.State.SUCCEEDED, card.state());
+        assertTrue(card.verified());
+        assertTrue("必须真的走过看图", screen.ocrCalls >= 1);
+        boolean readOk = false;
+        for (GoalCard.Evidence evidence : card.evidence()) {
+            if ("READ_OK".equals(evidence.code) && evidence.detail.contains("来源=ocr")) readOk = true;
+        }
+        assertTrue(readOk);
+    }
+
+    /** 9. 读不到就是读不到：不许报成功，也不许编内容。 */
+    @Test public void readGoalWithoutAnyTextFailsInsteadOfPretending() {
+        Fake screen = new Fake();
+        screen.pkg = "com.tencent.mm";
+
+        GoalCard card = new GoalMainLoop(screen, GoalPathStore.inMemory()).run("读一下微信消息");
+
+        assertEquals(GoalCard.State.FAILED, card.state());
+        assertEquals("READ_EMPTY", card.failureCode());
+        assertEquals(GoalCard.Outcome.NOT_POSSIBLE, card.outcome());
+    }
+
+    /** 10. 空树 + 翻页后才读到：算读到，且记录翻过页。 */
+    @Test public void readGoalScrollsBeforeGivingUp() {
+        Fake screen = new Fake() {
+            int reads;
+            @Override public OcrResult readImage() {
+                ocrCalls++;
+                reads++;
+                if (reads == 1) return new OcrResult(true, "SCREEN_OCR", Collections.emptyList());
+                return new OcrResult(true, "SCREEN_OCR",
+                        Collections.singletonList(new GoalScreen.OcrItem("第二条消息", 40, 300, 500, 360)));
+            }
+            @Override public boolean scrollDown() { scrolling++; return true; }
+        };
+        screen.pkg = "com.tencent.mm";
+
+        GoalCard card = new GoalMainLoop(screen, GoalPathStore.inMemory()).run("看看微信有什么消息");
+
+        assertEquals(GoalCard.State.SUCCEEDED, card.state());
+        assertTrue(screen.scrolling > 0);
     }
 
     /** 7. 关掉全部扩展，打开应用仍能跑完。 */
