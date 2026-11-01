@@ -27,7 +27,11 @@ public final class ActionSpec {
         // --- V1.9 新增：按文本点击（找不到自动滚动） ---
         TAP_TEXT,
         // --- V2.0 新增：Android 原生手势与系统通知 ---
-        SWIPE, NOTIFICATIONS;
+        SWIPE, NOTIFICATIONS,
+        // --- V2.1 新增：把当前界面文字读出来（模型真正"看得见"的唯一通道） ---
+        READ_SCREEN,
+        // --- V2.1 新增：往当前聚焦的输入框写字（真实应用发消息的关键一步） ---
+        INPUT_FOCUSED;
 
         public static ActionType fromString(String s) throws JSONException {
             if (s == null) throw new JSONException("action type is null");
@@ -78,6 +82,8 @@ public final class ActionSpec {
                 case "tap_text": return TAP_TEXT;
                 case "swipe": return SWIPE;
                 case "notifications": return NOTIFICATIONS;
+                case "read_screen": return READ_SCREEN;
+                case "input_focused": return INPUT_FOCUSED;
                 default:
                     throw new JSONException("action type not in whitelist: " + s);
             }
@@ -129,6 +135,8 @@ public final class ActionSpec {
                 case TAP_TEXT: return "tap_text";
                 case SWIPE: return "swipe";
                 case NOTIFICATIONS: return "notifications";
+                case READ_SCREEN: return "read_screen";
+                case INPUT_FOCUSED: return "input_focused";
                 default: return "recover";
             }
         }

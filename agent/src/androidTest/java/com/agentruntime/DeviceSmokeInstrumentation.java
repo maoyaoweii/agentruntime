@@ -24,11 +24,13 @@ public final class DeviceSmokeInstrumentation extends Instrumentation {
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean finished = new AtomicBoolean(false);
     private long startedAt;
+    private boolean ocrOnly;
 
     @Override
     public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         startedAt = System.currentTimeMillis();
+        ocrOnly = "true".equals(arguments.getString("ocr_only"));
         start();
     }
 
@@ -36,7 +38,62 @@ public final class DeviceSmokeInstrumentation extends Instrumentation {
     public void onStart() {
         super.onStart();
         if (started.compareAndSet(false, true)) {
-            new Thread(this::runSmoke, "device-smoke-instrumentation").start();
+            new Thread(ocrOnly ? this::runOcrSmoke : this::runSmoke, "device-smoke-instrumentation").start();
+        }
+    }
+
+    /** Run only on an isolated emulator with the synthetic companion app installed. */
+    private void runOcrSmoke() {
+        JSONObject report = new JSONObject();
+        JSONArray tests = new JSONArray();
+        Context context = getTargetContext();
+        try {
+            report.put("runner", "synthetic_screen_ocr");
+            report.put("tests", tests);
+            long until = System.currentTimeMillis() + 30000;
+            while (com.agentruntime.service.AgentAccessibilityService.getInstance() == null
+                    && System.currentTimeMillis() < until) Thread.sleep(200);
+            if (com.agentruntime.service.AgentAccessibilityService.getInstance() == null)
+                throw new AssertionError("accessibility service did not connect");
+            until = System.currentTimeMillis() + 15000;
+            while (System.currentTimeMillis() < until) {
+                com.agentruntime.state.WorldState screen =
+                        com.agentruntime.service.AgentAccessibilityService.getInstance().snapshot("ocr-test-wait");
+                if (screen != null && "com.agenttestapp".equals(screen.foregroundPackage)) break;
+                Thread.sleep(200);
+            }
+            Thread.sleep(1000);
+            if (!com.agentruntime.vision.ScreenOcrSettings.setEnabled(context, true))
+                throw new AssertionError("could not enable test OCR");
+            run(tests, "drawn_screen_two_pages", () -> {
+                AgentApp app = (AgentApp) context.getApplicationContext();
+                com.agentruntime.dsl.ActionSpec read = new com.agentruntime.dsl.ActionSpec(
+                        com.agentruntime.dsl.ActionSpec.ActionType.READ_SCREEN, new JSONObject(), 22000, 0,
+                        com.agentruntime.dsl.ActionSpec.RiskLevel.LOW, false, null);
+                ExecResult first = app.actionExecutor().execute("ocr-test", "first", "read", read);
+                if (!"SCREEN_OCR".equals(first.code) || !first.detail.contains("SCREEN")
+                        || !first.detail.contains("测试"))
+                    throw new AssertionError("first page OCR: " + first.toJson());
+                Thread.sleep(1500);
+                com.agentruntime.dsl.ActionSpec swipe = new com.agentruntime.dsl.ActionSpec(
+                        com.agentruntime.dsl.ActionSpec.ActionType.SWIPE,
+                        new JSONObject().put("direction", "up"), 8000, 0,
+                        com.agentruntime.dsl.ActionSpec.RiskLevel.LOW, false, null);
+                ExecResult moved = app.actionExecutor().execute("ocr-test", "swipe", "swipe", swipe);
+                if (!moved.ok()) throw new AssertionError("swipe: " + moved.toJson());
+                Thread.sleep(1500);
+                ExecResult second = app.actionExecutor().execute("ocr-test", "second", "read", read);
+                if (!"SCREEN_OCR".equals(second.code) || !second.detail.contains("NEXT"))
+                    throw new AssertionError("second page OCR: " + second.toJson());
+                return detail("two_synthetic_pages_recognized", true);
+            });
+            report.put("passed", countFailures(tests) == 0);
+        } catch (Throwable t) {
+            putFatal(report, t);
+            try { report.put("passed", false); } catch (Exception ignored) { }
+        } finally {
+            com.agentruntime.vision.ScreenOcrSettings.setEnabled(context, false);
+            finishOnce(report);
         }
     }
 

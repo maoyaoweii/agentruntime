@@ -135,6 +135,15 @@ public final class ActionExecutor {
             return r;
         }
 
+        // 屏幕类动作只对"别人的应用"有意义。聊天界面在前台时，滑动、坐标点击、找文字
+        // 全都作用在 DSH 自己身上——真机上表现为"滑动已经生效"，其实滑的是聊天气泡。
+        if (touchesScreen(spec.type) && isOwnWindow(before)) {
+            audit(taskId, actionId, "preflight", "accessibility", epoch, "SELF_WINDOW_FOCUSED", null);
+            return ExecResult.fail("SELF_WINDOW_FOCUSED",
+                    "当前前台是 DSH 自己（聊天界面），不是要操作的应用。"
+                            + "请先把目标应用切到前台；聊天让位后会自动重试成功。", epoch, elapsed(start));
+        }
+
         // 定位
         UiNode target = null;
         String locateInfo = null;
@@ -302,7 +311,7 @@ public final class ActionExecutor {
                 break;
             }
             case TAP_TEXT: {
-                result = tapText(spec, cancelRequested, taskDeadlineMs, epoch, start);
+                result = tapText(taskId, actionId, spec, cancelRequested, taskDeadlineMs, epoch, start);
                 break;
             }
             case SWIPE: {
@@ -445,7 +454,7 @@ public final class ActionExecutor {
                 com.agentruntime.device.SystemBridge sys = systemBridge();
                 result = sys == null
                         ? ExecResult.reject("CAPABILITY_MISSING", "system bridge not attached", epoch)
-                        : sys.openSettingsPage(spec.param("page"));
+                        : sys.openSettingsPage(spec.param("page"), spec.param("package"));
                 break;
             }
             case LIST_APPS: {
@@ -515,6 +524,14 @@ public final class ActionExecutor {
             case READ_STATE: {
                 String value = target.text != null ? target.text : target.contentDescription;
                 result = ExecResult.ok("STATE_READ", value, epoch, elapsed(start));
+                break;
+            }
+            case READ_SCREEN: {
+                result = readScreen(before, spec, epoch, start, cancelRequested, taskDeadlineMs);
+                break;
+            }
+            case INPUT_FOCUSED: {
+                result = inputFocused(before, spec, epoch, start);
                 break;
             }
             case REQUEST_CONFIRMATION: {
@@ -686,6 +703,184 @@ public final class ActionExecutor {
                 spec.params.optLong("hold_ms", 800), spec.timeoutMs);
     }
 
+    /**
+     * 把当前界面的可见文字读成一段文本，供模型直接决策。
+     *
+     * <p>之前只有 sys.observe（设备电量/网络），模型想看界面就只能截图，而截图又拿不到像素，
+     * 于是"能点不能读"。这里用无障碍树本身作为读通道：文字、可点击位置、可输入框、滚动容器。
+     * 读不到根节点时明确报 A11Y_ROOT_UNAVAILABLE，而不是返回一条空成功。
+     */
+    private ExecResult readScreen(WorldState state, ActionSpec spec, long epoch, long start,
+                                  AtomicBoolean cancelRequested, long taskDeadlineMs) {
+        if (state == null || state.root == null) {
+            return ExecResult.fail("A11Y_ROOT_UNAVAILABLE",
+                    "无障碍服务在运行，但没有返回界面节点。请到 系统设置 → 无障碍 → DSH Mobile 确认开关为开启；"
+                            + "部分厂商系统（小米/OPPO/vivo/华为）还需要允许「受限设置」，或把目标应用切到前台后重试。",
+                    epoch, elapsed(start));
+        }
+        int maxChars = spec.params.optInt("max_chars", 4000);
+        if (maxChars < 400) maxChars = 400;
+        if (maxChars > 8000) maxChars = 8000;
+
+        // 读到自己头上是最隐蔽的失败：聊天气泡里也有"热门""发送"，点下去当然不可交互。
+        String own = appContext == null ? null : appContext.getPackageName();
+        if (own != null && own.equals(state.foregroundPackage)) {
+            return ExecResult.fail("SELF_WINDOW_FOCUSED",
+                    "当前前台是 DSH 自己的聊天界面，不是要操作的应用。请先把目标应用切到前台，再读屏。",
+                    epoch, elapsed(start));
+        }
+
+        StringBuilder body = new StringBuilder();
+        int shown = 0;
+        int labels = 0;
+        int editable = 0;
+        java.util.List<UiNode> nodes = state.root.flat();
+        for (UiNode node : nodes) {
+            String label = node.text != null && !node.text.trim().isEmpty()
+                    ? node.text.trim() : node.contentDescription;
+            boolean hasLabel = label != null && !label.trim().isEmpty();
+            if (!hasLabel && !node.editable && !node.scrollable) continue;
+            if (!node.visible) continue;
+            if (hasLabel) labels++;
+            if (node.editable) editable++;
+
+            StringBuilder line = new StringBuilder();
+            line.append(hasLabel ? "「" + clipText(label.trim(), 120) + "」" : "[" + simpleClass(node.className) + "]");
+            if (node.editable) line.append(node.focused ? " 输入框(已聚焦)" : " 输入框");
+            if (node.clickable) line.append(" 可点");
+            if (node.scrollable) line.append(" 可滚动");
+            if (node.left >= 0 && node.bottom > node.top) {
+                line.append(" @").append(node.left).append(',').append(node.top)
+                        .append('-').append(node.right).append(',').append(node.bottom);
+            }
+            if (body.length() + line.length() + 1 > maxChars) {
+                body.append("\n…（已达 ").append(maxChars).append(" 字上限，先滚动或缩小范围再读）");
+                break;
+            }
+            body.append('\n').append(line);
+            shown++;
+        }
+        if (shown == 0 || (labels == 0 && editable == 0)) {
+            if (com.agentruntime.vision.ScreenOcrSettings.enabled(appContext)) {
+                return readScreenOcr(state, maxChars, epoch, start, cancelRequested, taskDeadlineMs);
+            }
+            return ExecResult.ok("SCREEN_EMPTY",
+                    "无障碍没有返回可读文字（package=" + state.foregroundPackage
+                            + "，节点数=" + state.nodeCount() + "）。原因可能是页面加载或系统没有提供内容，不能据此断定应用禁止读屏。"
+                            + (com.agentruntime.vision.ScreenOcrSettings.enabled(appContext)
+                                ? "画面文字识别已开启但没有成功：请看返回码——SCREENSHOT_SECURE 表示系统保护了这个窗口，OCR_EMPTY 表示截到了图但没识别出字。"
+                                : "「画面文字识别」当前被关闭，可在 DSH 的连接与设置中重新开启后重试。"),
+                    epoch, elapsed(start));
+        }
+        String header = "package=" + state.foregroundPackage
+                + " window=" + (state.windowTitle == null ? "-" : clipText(state.windowTitle, 40))
+                + " 节点=" + state.nodeCount() + " 可读=" + shown;
+        return ExecResult.ok("SCREEN_TEXT", header + body, epoch, elapsed(start));
+    }
+
+    private ExecResult readScreenOcr(WorldState state, int maxChars, long epoch, long start,
+                                     AtomicBoolean cancelled, long deadlineMs) {
+        ExtendedCapabilities c = capabilities;
+        if (c == null || c.screenOcr == null) {
+            return ExecResult.fail("OCR_UNAVAILABLE", "本机画面文字识别暂不可用。", epoch, elapsed(start));
+        }
+        long settingsRevision = com.agentruntime.vision.ScreenOcrSettings.revision(appContext);
+        com.agentruntime.vision.ScreenTextOcr.Result result = c.screenOcr.read(state, cancelled, deadlineMs);
+        if (cancelled != null && cancelled.get()) return ExecResult.cancelled("USER_CANCEL", "已取消读屏", epoch);
+        if (!com.agentruntime.vision.ScreenOcrSettings.enabled(appContext)
+                || settingsRevision != com.agentruntime.vision.ScreenOcrSettings.revision(appContext)) {
+            return ExecResult.fail("OCR_DISABLED", "画面文字识别已关闭，结果已丢弃。", epoch, elapsed(start));
+        }
+        if (System.currentTimeMillis() >= deadlineMs) {
+            return ExecResult.timeout("TASK_TIMEOUT", "读屏超时，结果已丢弃。", epoch, elapsed(start));
+        }
+        WorldState current = stateEngine.current();
+        if (current == null || current.epoch != state.epoch
+                || !java.util.Objects.equals(current.foregroundPackage, state.foregroundPackage)) {
+            return ExecResult.fail("SCREEN_CHANGED", "识别期间前台窗口发生变化，结果已丢弃，请重新读屏。", epoch, elapsed(start));
+        }
+        if (result == null) return ExecResult.fail("OCR_FAILED", "画面文字识别未返回结果。", epoch, elapsed(start));
+        if (!"SCREEN_OCR".equals(result.code)
+                || result.text == null || result.text.trim().isEmpty()) {
+            String code = result.code == null ? "OCR_FAILED" : result.code;
+            if ("SCREEN_OCR".equals(code)) code = "OCR_EMPTY";
+            return ExecResult.fail(code, ocrErrorMessage(code), epoch, elapsed(start));
+        }
+        return ExecResult.ok("SCREEN_OCR", "package=" + state.foregroundPackage
+                + " 来源=本机画面文字识别；仅为可见文字，可能误识别或顺序有误，不能证明文字可点击。\n"
+                + clipText(result.text.trim(), maxChars), epoch, elapsed(start));
+    }
+
+    private static String ocrErrorMessage(String code) {
+        if ("SCREENSHOT_UNSUPPORTED".equals(code)) return "画面文字识别需要 Android 11 或更新版本。";
+        if ("SCREENSHOT_SERVICE_UNAVAILABLE".equals(code)) return "无障碍截图服务不可用，请检查无障碍设置。";
+        if ("SCREENSHOT_SECURE".equals(code)) return "系统保护了当前窗口，无法截取或识别其中内容。";
+        if ("SCREEN_CHANGED".equals(code)) return "识别期间前台窗口发生变化，结果已丢弃，请重新读屏。";
+        if ("SCREEN_BOUNDS_UNAVAILABLE".equals(code)) return "无法确定前台应用的画面范围，未进行识别。";
+        if ("OCR_EMPTY".equals(code)) return "截图识别未发现可读文字；页面可能仍在加载、文字不可见或画面受系统保护。";
+        if ("OCR_BUSY".equals(code)) return "上一次画面识别仍在进行，请稍后重试。";
+        if ("OCR_TIMEOUT".equals(code)) return "画面文字识别超时，请稍后重试。";
+        if ("OCR_DISABLED".equals(code)) return "画面文字识别已关闭，结果已丢弃。";
+        if ("USER_CANCEL".equals(code)) return "读屏已取消。";
+        return "无法截取或识别当前画面，请检查无障碍权限并稍后重试；受保护画面可能无法读取。";
+    }
+
+    /**
+     * 往当前聚焦/第一个可编辑输入框写字。
+     *
+     * <p>真实应用（微信、短信、搜索框）几乎都靠"先点输入框，再打字"。
+     * 让模型每次都先 read_screen 找 node id 再 input_text 太脆；这里直接用焦点状态落笔，
+     * 与真人操作顺序一致：tap_text 点输入框 → type_text 写字。
+     */
+    private ExecResult inputFocused(WorldState state, ActionSpec spec, long epoch, long start) {
+        if (state == null || state.root == null) {
+            return ExecResult.fail("A11Y_ROOT_UNAVAILABLE", "读不到界面节点，无法确定输入框", epoch, elapsed(start));
+        }
+        UiNode field = null;
+        java.util.List<UiNode> nodes = state.root.flat();
+        if (state.focusNodeId != null) {
+            for (UiNode node : nodes) if (state.focusNodeId.equals(node.nodeId) && node.editable) { field = node; break; }
+        }
+        if (field == null) for (UiNode node : nodes) if (node.editable && node.visible) { field = node; break; }
+        if (field == null) {
+            return ExecResult.fail("NO_INPUT_FIELD",
+                    "当前界面没有可编辑输入框。先点一下要输入的框（sys.tap_text），再调用 sys.type_text。",
+                    epoch, elapsed(start));
+        }
+        ExecResult result = accessibilityBridge.performInput(field, spec.param("text"), spec.timeoutMs);
+        return result;
+    }
+
+    /** 这些动作都在"当前屏幕"上生效，前台是谁决定了它打到谁身上。 */
+    private static boolean touchesScreen(ActionSpec.ActionType type) {
+        switch (type) {
+            case TAP_TEXT: case READ_SCREEN: case SCREENSHOT: case VISUAL_TAP:
+            case TAP_XY: case SWIPE_XY: case LONG_PRESS_XY: case SWIPE:
+            case CLICK_NODE: case LONG_CLICK: case FIND_NODE: case READ_STATE:
+            case INPUT_TEXT: case INPUT_FOCUSED: case CLEAR_TEXT: case WAIT_FOR:
+            case SCROLL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean isOwnWindow(WorldState state) {
+        if (state == null || appContext == null) return false;
+        String own = appContext.getPackageName();
+        return own != null && own.equals(state.foregroundPackage);
+    }
+
+    private static String simpleClass(String className) {
+        if (className == null) return "node";
+        int dot = className.lastIndexOf('.');
+        return dot >= 0 ? className.substring(dot + 1) : className;
+    }
+
+    private static String clipText(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max) + "…";
+    }
+
     /** 截图并落盘留证：审计里只存路径与体积，不存二进制。 */
     private ExecResult doScreenshot(ActionSpec spec, long epoch, long start) {
         ExtendedCapabilities c = capabilities;
@@ -713,7 +908,9 @@ public final class ActionExecutor {
         } catch (Throwable t) {
             path = "save_failed:" + t.getClass().getSimpleName();
         }
-        return ExecResult.ok("SHOT_OK", frame.describe() + " path=" + path, epoch, elapsed(start));
+        return ExecResult.ok("SHOT_OK", frame.describe() + " path=" + path
+                + "\n说明：截图只保存在本机用于留证，当前会话不会把像素回传给模型，"
+                + "所以不要靠截图读内容；要读界面文字请调用 sys.read_screen。", epoch, elapsed(start));
     }
 
     /**
@@ -766,7 +963,7 @@ public final class ActionExecutor {
      * <p>匹配顺序：精确文本可点击 → 包含文本可点击 → 精确文本 → 包含文本；
      * 命中的若是不可点击的文本节点，改点"包含该节点且面积最小的可点击祖先"。
      */
-    private ExecResult tapText(ActionSpec spec, AtomicBoolean cancelRequested,
+    private ExecResult tapText(String taskId, String actionId, ActionSpec spec, AtomicBoolean cancelRequested,
                                long taskDeadlineMs, long epoch, long start) {
         String query = spec.param("text");
         if (query == null || query.trim().isEmpty()) {
@@ -795,12 +992,52 @@ public final class ActionExecutor {
                         "accessibility root unavailable (service bound but no window tree);"
                                 + " rebind accessibility service", epoch, elapsed(start));
             }
+            if (state.foregroundPackage == null || state.foregroundPackage.trim().isEmpty()) {
+                return ExecResult.fail("A11Y_ROOT_UNAVAILABLE", "无法确认当前前台应用，已停止点击。", epoch, elapsed(start));
+            }
+            String own = appContext == null ? null : appContext.getPackageName();
+            if (own != null && own.equals(state.foregroundPackage)) {
+                // 在自己的聊天界面里找"热门"，命中的是气泡文字，点了必然不可交互。
+                logTap("self-window");
+                return ExecResult.fail("SELF_WINDOW_FOCUSED",
+                        "当前前台是 DSH 自己的聊天界面，不是目标应用；先把目标应用切到前台再点",
+                        epoch, elapsed(start));
+            }
             UiNode node = pickByText(state, query);
             logTap("attempt=" + attempt + " root=" + rootBounds(state)
                     + " nodes=" + (state == null || state.root == null ? 0 : state.root.flat().size())
                     + " hit=" + (node == null ? "-" : node.nodeId));
             if (node != null) {
-                ExecResult r = accessibilityBridge.performClick(node, spec.timeoutMs);
+                String sensitive = sensitiveTapLabel(query, node);
+                if (sensitive != null) {
+                    String summary = "当前应用：" + confirmationValue(String.valueOf(state.foregroundPackage))
+                            + "\n即将点击：" + confirmationValue(sensitive);
+                    RiskGate.Decision decision = riskGate.confirmSensitiveTap(actionId, summary);
+                    if (!decision.allow) {
+                        audit(taskId, actionId, "risk_gate", "none", epoch, "REJECTED_" + decision.reason, null);
+                        return ExecResult.reject("RISK_REJECTED", decision.reason, epoch);
+                    }
+                    if (cancelRequested != null && cancelRequested.get()) {
+                        return ExecResult.cancelled("USER_CANCEL", "cancel requested before click", epoch);
+                    }
+                    if (System.currentTimeMillis() >= taskDeadlineMs) {
+                        return ExecResult.timeout("TASK_TIMEOUT", "task deadline reached during confirmation", epoch, elapsed(start));
+                    }
+                    WorldState current = snapshotWithGrace("tap_after_confirmation", 1000);
+                    UiNode verified = null;
+                    if (current != null && current.root != null
+                            && java.util.Objects.equals(state.foregroundPackage, current.foregroundPackage)) {
+                        for (UiNode candidate : current.root.flat()) {
+                            if (node.fingerprint().equals(candidate.fingerprint())) { verified = candidate; break; }
+                        }
+                    }
+                    if (verified == null) return ExecResult.fail("TARGET_CHANGED",
+                            "确认期间界面或目标发生变化，请重新读屏后再决定是否操作。", epoch, elapsed(start));
+                    node = verified;
+                }
+                if (cancelRequested != null && cancelRequested.get()) return ExecResult.cancelled("USER_CANCEL", "cancel requested before click", epoch);
+                if (System.currentTimeMillis() >= taskDeadlineMs) return ExecResult.timeout("TASK_TIMEOUT", "task deadline reached before click", epoch, elapsed(start));
+                ExecResult r = accessibilityBridge.performClick(node, spec.timeoutMs, state.foregroundPackage);
                 if (r.ok()) {
                     return ExecResult.ok("TAP_TEXT_OK",
                             query + " -> " + node.nodeId + " (scrolls=" + attempt
@@ -816,7 +1053,8 @@ public final class ActionExecutor {
                 if (close != null) {
                     dismissed = close.text != null && !close.text.trim().isEmpty()
                             ? close.text.trim() : close.contentDescription;
-                    boolean clicked = accessibilityBridge.performClick(close, spec.timeoutMs).ok();
+                    if (cancelRequested != null && cancelRequested.get()) return ExecResult.cancelled("USER_CANCEL", "cancel requested before dialog dismissal", epoch);
+                    boolean clicked = accessibilityBridge.performClick(close, spec.timeoutMs, state.foregroundPackage).ok();
                     logTap("dismiss-click ok=" + clicked);
                     if (clicked) {
                         if (!sleepQuietly(settleMs)) {
@@ -854,10 +1092,28 @@ public final class ActionExecutor {
         }
     }
 
-    /** 挡路弹窗里允许自动点击的按钮文案：只认无副作用的确认/关闭，绝不包含授权类。 */
+    /** 挡路弹窗只可自动点击明确的关闭或取消，模糊确认可能触发外部操作。 */
     private static final List<String> SAFE_DIALOG_LABELS = java.util.Arrays.asList(
-            "ok", "okay", "got it", "continue", "close", "dismiss", "no thanks",
-            "确定", "知道了", "明白了", "关闭", "继续");
+            "close", "dismiss", "cancel", "no thanks", "关闭", "取消");
+
+    private static final java.util.regex.Pattern CONSEQUENTIAL_ENGLISH = java.util.regex.Pattern.compile(
+            "\\b(send|submit|publish|post|pay|purchase|buy|order|transfer|delete|remove|confirm|allow|authorize|grant|accept|agree|share|follow|subscribe|save|ok|okay|continue|proceed|done)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static String sensitiveTapLabel(String query, UiNode target) {
+        if (consequentialLabel(query)) return query;
+        for (UiNode node : target.flat()) {
+            if (!node.visible) continue;
+            if (consequentialLabel(node.text)) return node.text;
+            if (consequentialLabel(node.contentDescription)) return node.contentDescription;
+        }
+        return null;
+    }
+    private static boolean consequentialLabel(String value) {
+        if (value == null) return false;
+        for (String word : new String[]{"发送","发布","提交","支付","付款","购买","下单","转账","删除","清空","授权","允许","同意","确认","确定","分享","收藏","关注","保存","完成","继续","知道了","明白了"})
+            if (value.contains(word)) return true;
+        return CONSEQUENTIAL_ENGLISH.matcher(value).find();
+    }
 
     static boolean isSafeDialogLabel(String label) {
         if (label == null) return false;
@@ -891,8 +1147,7 @@ public final class ActionExecutor {
     /**
      * 目标文本找不到、且当前窗口是挡路对话框时，返回可安全点击的关闭按钮；没有则 null。
      *
-     * <p>只点 OK/Got it/Continue/Close 这类确认，授权类按钮（Allow/允许）必须由人点，
-     * 因此这里用白名单精确匹配，而不是"随便点一个按钮"。
+     * <p>只点明确的关闭或取消按钮；模糊的 OK/确定/继续可能提交操作，不自动点击。
      */
     static UiNode dismissBlockingDialog(WorldState state) {
         if (state == null || state.root == null) return null;
@@ -930,8 +1185,20 @@ public final class ActionExecutor {
     }
 
     /** 在整棵树里挑最像用户想点的那个节点（不依赖坐标，也不做模糊的语义猜测）。 */
-    private static UiNode pickByText(WorldState state, String query) {
+    /**
+     * 按可见文字挑节点，支持 {@code "A|B"} 多候选（中文界面/英文界面的同一入口）。
+     *
+     * <p>系统设置这类页面在不同 ROM 上叫法不同（强行停止 / Force stop），
+     * 只认一个写法等于把技能绑死在一种语言上。
+     */
+    static UiNode pickByText(WorldState state, String query) {
         if (state == null || state.root == null) return null;
+        List<String> needles = new ArrayList<>();
+        if (query != null) for (String raw : query.split("\\|")) {
+            String needle = raw.trim();
+            if (!needle.isEmpty()) needles.add(needle);
+        }
+        if (needles.isEmpty()) return null;
         List<UiNode> clickables = new ArrayList<>();
         UiNode exactClickable = null;
         UiNode exactAny = null;
@@ -940,8 +1207,11 @@ public final class ActionExecutor {
         for (UiNode n : state.root.flat()) {
             if (!n.visible) continue;
             if (n.clickable) clickables.add(n);
-            boolean exact = n.matchesText(query);
-            boolean contains = n.containsText(query);
+            boolean exact = false, contains = false;
+            for (String needle : needles) {
+                if (n.matchesText(needle)) { exact = true; break; }
+                if (n.containsText(needle)) contains = true;
+            }
             if (!exact && !contains) continue;
             if (exact && n.clickable) {
                 if (exactClickable == null) exactClickable = n;

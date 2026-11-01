@@ -6,6 +6,7 @@
   "risk": "LOW",
   "confirmation": "never",
   "max_retries": 1,
+  "recovery": "滑动浏览当前界面；每次滑动后先用 sys.read_screen 确认画面已变化，再继续滑动并读取下一屏。",
   "postconditions": [],
   "steps": [
     {"action": "swipe", "params": {"direction": "${direction}", "distance_pct": 60, "duration_ms": 300}, "timeout_ms": 8000}

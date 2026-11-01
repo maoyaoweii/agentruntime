@@ -1,0 +1,15 @@
+{
+  "skill_id": "sys.type_text",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["text"],
+  "risk": "MEDIUM",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "往当前聚焦或界面上第一个输入框写字，不需要知道节点 id。顺序：先 sys.tap_text 点中搜索框/聊天输入框，再 sys.type_text 输入内容，最后 sys.read_screen 确认文字进去了。返回 NO_INPUT_FIELD 表示这个界面没有输入框",
+  "postconditions": [],
+  "steps": [
+    {"action": "input_focused", "params": {"text": "${text}"}, "timeout_ms": 20000},
+    {"action": "wait_ms", "params": {"ms": 400}, "timeout_ms": 3000}
+  ]
+}

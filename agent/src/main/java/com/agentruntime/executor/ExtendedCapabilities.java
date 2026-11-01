@@ -33,6 +33,9 @@ public final class ExtendedCapabilities {
     /** 系统底层调用（音量/亮度/剪贴板/媒体键/振动/设置页/应用列表/受限文件）。 */
     public final com.agentruntime.device.SystemBridge system;
 
+    /** Optional local screenshot text recognition, explicitly enabled by the user. */
+    public final com.agentruntime.vision.ScreenTextOcr screenOcr;
+
     public ExtendedCapabilities(GestureBridge gestures, ScreenCapturer capturer,
                                 VisualGrounder grounder, BrowserController browser,
                                 EnvironmentProbe envProbe) {
@@ -43,12 +46,21 @@ public final class ExtendedCapabilities {
                                 VisualGrounder grounder, BrowserController browser,
                                 EnvironmentProbe envProbe,
                                 com.agentruntime.device.SystemBridge system) {
+        this(gestures, capturer, grounder, browser, envProbe, system, null);
+    }
+
+    public ExtendedCapabilities(GestureBridge gestures, ScreenCapturer capturer,
+                                VisualGrounder grounder, BrowserController browser,
+                                EnvironmentProbe envProbe,
+                                com.agentruntime.device.SystemBridge system,
+                                com.agentruntime.vision.ScreenTextOcr screenOcr) {
         this.gestures = gestures;
         this.capturer = capturer;
         this.grounder = grounder;
         this.browser = browser;
         this.envProbe = envProbe;
         this.system = system;
+        this.screenOcr = screenOcr;
     }
 
     public boolean visionReady() {

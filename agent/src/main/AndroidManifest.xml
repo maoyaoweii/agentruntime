@@ -39,8 +39,8 @@
     <application
         android:name="com.agentruntime.AgentApp"
         android:label="@string/app_name"
-        android:icon="@drawable/ic_launcher"
-        android:roundIcon="@drawable/ic_launcher"
+        android:icon="@drawable/ic_dsh"
+        android:roundIcon="@drawable/ic_dsh"
         android:allowBackup="false"
         android:supportsRtl="true"
         android:requestLegacyExternalStorage="true"
@@ -48,7 +48,9 @@
         android:theme="@style/AppTheme">
 
         <activity
-            android:name="com.agentruntime.ui.MainActivity"
+            android:name="com.agentruntime.dsh.ui.DshActivity"
+            android:theme="@style/DshTheme"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
@@ -56,6 +58,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity android:name="com.agentruntime.ui.MainActivity" android:exported="false" />
+        <activity android:name="com.agentruntime.dsh.ui.SessionsActivity" android:exported="false" android:theme="@style/DshTheme" />
+        <activity android:name="com.agentruntime.dsh.ui.PluginsActivity" android:exported="false" android:theme="@style/DshTheme" />
+        <activity android:name="com.agentruntime.dsh.ui.DshSettingsActivity" android:exported="false" android:theme="@style/DshTheme" android:windowSoftInputMode="adjustResize" />
+        <activity android:name="com.agentruntime.dsh.ui.WorkspaceActivity" android:exported="false" android:theme="@style/DshTheme" />
+        <service android:name="com.agentruntime.dsh.runtime.DshTurnService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="dsh_mobile_turn: continue user-started model conversation and confirmed phone tools while another app is visible" />
+        </service>
 
         <activity
             android:name="com.agentruntime.ui.ConsoleActivity"

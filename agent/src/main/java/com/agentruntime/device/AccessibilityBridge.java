@@ -49,20 +49,31 @@ public final class AccessibilityBridge implements DeviceBridge {
 
     @Override
     public ExecResult performClick(UiNode target, long timeoutMs) {
+        return performClick(target,timeoutMs,null);
+    }
+
+    public ExecResult performClick(UiNode target,long timeoutMs,String expectedPackage) {
         long start = System.currentTimeMillis();
         if (target == null) {
             return ExecResult.fail("NODE_NOT_FOUND", "null target", epoch(), elapsed(start));
         }
-        if (!target.clickable || !target.enabled || !target.visible) {
+        if (!target.enabled || !target.visible) {
             return ExecResult.fail("NODE_NOT_INTERACTABLE",
-                    "clickable=" + target.clickable + " enabled=" + target.enabled + " visible=" + target.visible,
+                    "enabled=" + target.enabled + " visible=" + target.visible,
                     epoch(), elapsed(start));
         }
         AgentAccessibilityService svc = AgentAccessibilityService.getInstance();
-        boolean ok = svc != null && svc.click(target);
-        if (!ok) return ExecResult.fail("CLICK_FAILED", "performAction returned false or node expired", epoch(), elapsed(start));
+        boolean ok = svc != null && svc.click(target, expectedPackage);
+        if (!ok) {
+            // 目标本身不可点时，服务已尝试父链兜底；仍失败才判定不可交互。
+            return target.clickable
+                    ? ExecResult.fail("CLICK_FAILED", "performAction returned false or node expired", epoch(), elapsed(start))
+                    : ExecResult.fail("NODE_NOT_INTERACTABLE",
+                            "目标与父链都没有可点节点，clickable=false", epoch(), elapsed(start));
+        }
         return ExecResult.ok("CLICK_OK", "clicked " + target.resourceId + "/" + target.text
-                + " @" + target.left + "," + target.top + "," + target.right + "," + target.bottom,
+                + " @" + target.left + "," + target.top + "," + target.right + "," + target.bottom
+                + (target.clickable ? "" : "（文字节点不可点，已点最近的可点父节点）"),
                 epoch(), elapsed(start));
     }
 

@@ -1,0 +1,15 @@
+{
+  "skill_id": "sys.press_key",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["key"],
+  "risk": "MEDIUM",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "系统级按键，不依赖坐标与界面文字：back=返回、home=回桌面、recents=最近任务、notifications=下拉通知栏、quick_settings=快捷设置、power_dialog=电源菜单、lock_screen=锁屏(API28+)、screenshot=系统截图(API30+)。返回手势、返回桌面都用它，不要用 sys.swipe 模拟",
+  "postconditions": [],
+  "steps": [
+    {"action": "press_key", "params": {"key": "${key}"}, "timeout_ms": 8000},
+    {"action": "wait_ms", "params": {"ms": 500}, "timeout_ms": 3000}
+  ]
+}

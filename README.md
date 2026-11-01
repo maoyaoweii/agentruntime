@@ -1,4 +1,8 @@
-# Android AI Agent Runtime V1.9.1
+# DSH Mobile · Android AI Agent Runtime
+
+**2.0 移动预览版：** 原生 Android 独立助手，支持本机会话、流式模型对话、手机工具与技能、插件开关和文件工作区。四个主要页面参照 [DSH Mobile 设计稿](docs/design/dsh-mobile-ui-reference.png) 实现。详见 [安装、使用与架构说明](docs/DSH_MOBILE.md)。
+
+本轮已通过自动化功能测试与构建检查；尚未完成当前 APK 的真机验收。下面的 V1.x 内容属于基础引擎及历史记录。
 
 > **2026-10-30 接手更新：** 任务确认与并发保护、规划与隐私修复、原生 UI 改版及回归验证见 [V1.9.1 接手报告](docs/TAKEOVER_2026-10-30.md)。本轮尚未做真机验收；下文设备记录对应各自历史构建。
 

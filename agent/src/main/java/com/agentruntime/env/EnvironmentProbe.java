@@ -70,7 +70,18 @@ public final class EnvironmentProbe {
         fillBrightness(b);
 
         AgentAccessibilityService svc = AgentAccessibilityService.getInstance();
+        // "服务活着" 和 "读得到界面" 是两件事：进程被系统绑定后仍可能 getRootInActiveWindow() 恒为 null，
+        // 只报 a11y_connected=true 会让模型以为能读屏，实际一条文字都拿不到。
         b.a11y(svc != null, svc != null && Build.VERSION.SDK_INT >= 30);
+        // 第三层：系统设置里到底勾没勾。用户说"我开了"和系统记录不一致时，这一项能立刻分辨谁在说谎。
+        boolean enabledInSettings;
+        try {
+            enabledInSettings = com.agentruntime.device.A11yStatus.enabledInSettings(context);
+        } catch (Throwable t) {
+            enabledInSettings = false;
+        }
+        b.a11yEnabled(enabledInSettings);
+        b.a11yRoot(svc != null && svc.canReadRootNow());
 
         return b.build();
     }

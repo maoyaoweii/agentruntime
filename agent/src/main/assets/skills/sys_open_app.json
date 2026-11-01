@@ -1,0 +1,16 @@
+{
+  "skill_id": "sys.open_app",
+  "version": "1.0",
+  "target_package": null,
+  "args": ["package"],
+  "risk": "MEDIUM",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "只启动应用，不点击任何东西：参数是包名（微信 com.tencent.mm、B站 tv.danmaku.bili、设置 com.android.settings）。想启动后直接点某个入口用 sys.ui_launch_tap；启动后要看界面就接 sys.read_screen",
+  "postconditions": [],
+  "steps": [
+    {"action": "launch_app", "params": {"package": "${package}"}, "timeout_ms": 40000},
+    {"action": "wait_for", "params": {"package": "${package}"}, "timeout_ms": 60000},
+    {"action": "wait_ms", "params": {"ms": 900}, "timeout_ms": 4000}
+  ]
+}

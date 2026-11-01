@@ -6,7 +6,7 @@
   "risk": "LOW",
   "confirmation": "never",
   "max_retries": 1,
-  "recovery": "按当前界面可见文字点击；首屏看不到就按 direction 滚动最多 max_scrolls 次再找。用于真实应用中藏在抽屉/列表下方的入口（实测 NewPipe 的「设置」）",
+  "recovery": "按当前界面可见文字点击；首屏看不到时可滚动查找。text 支持用 | 分隔候选。发送、支付、删除、授权及确定等已识别的敏感按钮需要用户确认；模糊的确认弹窗不会自动通过。",
   "postconditions": [],
   "steps": [
     {"action": "tap_text",

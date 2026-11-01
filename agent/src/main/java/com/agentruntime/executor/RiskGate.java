@@ -55,14 +55,24 @@ public final class RiskGate {
     public Decision check(String actionId, ActionSpec spec, String summary) {
         boolean risky = spec.risk == ActionSpec.RiskLevel.HIGH || spec.requiresConfirmation;
         if (!risky) return new Decision(true, false, "low_risk");
+        return request(actionId,summary,false);
+    }
+
+    /** Generic text taps may resolve to a consequential button only after preflight. */
+    public Decision confirmSensitiveTap(String actionId,String detail) {
+        return request(actionId,detail,true);
+    }
+
+    private Decision request(String actionId,String summary,boolean includeDetail) {
         if (testModeAutoConfirm) {
             return new Decision(true, true, "test_mode_auto_confirm");
         }
         StepScope scope = stepScope.get();
-        if (scope != null && scope.approved) return new Decision(true, false, "user_confirmed_step");
+        if (!includeDetail && scope != null && scope.approved) return new Decision(true, false, "user_confirmed_step");
         ConfirmationChannel c = channel;
         if (c == null) return new Decision(false, false, "no_confirmation_channel");
-        boolean ok = c.requestConfirmation(actionId, scope == null ? summary : scope.summary);
+        String prompt=scope==null?summary:scope.summary+(includeDetail?"\n\n"+summary:"");
+        boolean ok = c.requestConfirmation(actionId,prompt);
         if (ok && scope != null) scope.approved = true;
         return new Decision(ok, false, ok ? "user_confirmed" : "user_rejected");
     }

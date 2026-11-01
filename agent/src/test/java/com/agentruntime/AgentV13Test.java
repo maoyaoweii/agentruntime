@@ -246,9 +246,10 @@ public class AgentV13Test {
     @Test
     public void actionCountMatchesDocumentation() {
         // 41 = V1.3 的 40 个原语 + V1.8 新增 append_file；delete_file 紧随其后；
-        // V1.9 新增 tap_text（按文本找+滚动+点）。
+        // V1.9 新增 tap_text（按文本找+滚动+点）；V2.1 新增 read_screen（读当前界面文字）
+        // 与 input_focused（往焦点输入框写字）。
         // 数字变更是刻意行为，改这里必须同时确认没有把原语静默删掉。
-        assertEquals("动作原语总数应为 45", 45, ActionSpec.ActionType.values().length);
+        assertEquals("动作原语总数应为 47", 47, ActionSpec.ActionType.values().length);
     }
 
     @Test

@@ -38,6 +38,10 @@ public final class EnvironmentSnapshot {
 
     public final int brightness;
     public final boolean a11yConnected;
+    /** 系统设置里是否勾选了本应用的无障碍服务（不代表已绑定）。 */
+    public final boolean a11yEnabledInSettings;
+    /** 无障碍此刻是否真的能读到界面节点；a11yConnected 只代表服务被系统绑定。 */
+    public final boolean a11yRootReady;
     public final boolean canCapture;
     public final long timestamp;
 
@@ -59,6 +63,8 @@ public final class EnvironmentSnapshot {
         this.network = b.network;
         this.brightness = b.brightness;
         this.a11yConnected = b.a11yConnected;
+        this.a11yEnabledInSettings = b.a11yEnabledInSettings;
+        this.a11yRootReady = b.a11yRootReady;
         this.canCapture = b.canCapture;
         this.timestamp = b.timestamp;
     }
@@ -86,7 +92,7 @@ public final class EnvironmentSnapshot {
     public String fingerprint() {
         return sdkInt + "|" + screenWidth + "x" + screenHeight + "|" + densityDpi
                 + "|" + fontScale + "|" + rotation + "|" + language + "|" + nightMode
-                + "|" + a11yConnected + "|" + canCapture;
+                + "|" + a11yConnected + "|" + a11yEnabledInSettings + "|" + a11yRootReady + "|" + canCapture;
     }
 
     public JSONObject toJson() {
@@ -110,6 +116,9 @@ public final class EnvironmentSnapshot {
             o.put("network", nullSafe(network));
             o.put("brightness", brightness);
             o.put("a11y_connected", a11yConnected);
+            o.put("a11y_enabled_in_settings", a11yEnabledInSettings);
+            o.put("a11y_root_ready", a11yRootReady);
+            o.put("screen_readable", a11yRootReady);
             o.put("can_capture", canCapture);
             o.put("timestamp", timestamp);
         } catch (JSONException ignored) {
@@ -138,6 +147,8 @@ public final class EnvironmentSnapshot {
                 .append(charging ? " charging" : "")
                 .append(" network=").append(nullSafe(network)).append("\n");
         sb.append("a11y_connected=").append(a11yConnected)
+                .append(" a11y_enabled_in_settings=").append(a11yEnabledInSettings)
+                .append(" screen_readable=").append(a11yRootReady)
                 .append(" screenshot_capable=").append(canCapture).append("\n");
         sb.append("</environment>");
         return sb.toString();
@@ -165,6 +176,8 @@ public final class EnvironmentSnapshot {
         private String network = "unknown";
         private int brightness = -1;
         private boolean a11yConnected;
+        private boolean a11yEnabledInSettings;
+        private boolean a11yRootReady;
         private boolean canCapture;
         private long timestamp = System.currentTimeMillis();
 
@@ -190,6 +203,8 @@ public final class EnvironmentSnapshot {
             this.canCapture = canCapture;
             return this;
         }
+        public Builder a11yEnabled(boolean enabled) { this.a11yEnabledInSettings = enabled; return this; }
+        public Builder a11yRoot(boolean ready) { this.a11yRootReady = ready; return this; }
         public Builder timestamp(long v) { this.timestamp = v; return this; }
 
         public EnvironmentSnapshot build() {

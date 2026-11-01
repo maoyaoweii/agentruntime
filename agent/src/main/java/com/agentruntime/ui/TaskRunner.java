@@ -5,6 +5,10 @@ import com.agentruntime.agent.BuildConfig;
 import com.agentruntime.dsl.ActionSpec;
 import com.agentruntime.dsl.DslParser;
 import com.agentruntime.dsl.TaskSpec;
+import com.agentruntime.goal.DeviceGoalScreen;
+import com.agentruntime.goal.GoalCard;
+import com.agentruntime.goal.GoalMainLoop;
+import com.agentruntime.goal.GoalPathStore;
 import com.agentruntime.executor.AppLaunchPolicy;
 import com.agentruntime.runtime.AgentRuntime;
 import com.agentruntime.runtime.TaskBus;
@@ -30,10 +34,12 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class TaskRunner {
 
     private static final AtomicReference<Execution> ACTIVE = new AtomicReference<>();
+    private static final Object ADMISSION = new Object();
 
     private static final class Execution {
-        final AtomicBoolean cancellation = new AtomicBoolean(false);
+        final AtomicBoolean cancellation;
         final Thread thread = Thread.currentThread();
+        Execution(AtomicBoolean cancellation) { this.cancellation=cancellation==null?new AtomicBoolean(false):cancellation; }
     }
 
     private interface TaskOperation {
@@ -44,7 +50,38 @@ public final class TaskRunner {
     }
 
     public static AgentRuntime.TaskResult runGoal(String goal, boolean autoConfirm, boolean allowReplan) throws Exception {
-        return runExclusive(autoConfirm, cancellation -> planAndRun(goal, autoConfirm, allowReplan, cancellation));
+        return runExclusive(autoConfirm, cancellation -> runGoalCard(goal, autoConfirm, allowReplan, cancellation));
+    }
+
+    /**
+     * 目标模式先走主循环：它负责把一件事做完（读屏、换招、核对、存路径）。
+     *
+     * <p>只有"这不是一个可执行的请求"（提问、解释、没有可观察标准）才回落到模型规划，
+     * 其余情况不允许主循环失败后偷偷换成另一套流程再报成功。
+     */
+    private static AgentRuntime.TaskResult runGoalCard(String goal, boolean autoConfirm,
+                                                       boolean allowReplan, AtomicBoolean cancellation) throws Exception {
+        AgentApp app = AgentApp.get();
+        GoalMainLoop loop = new GoalMainLoop(
+                new DeviceGoalScreen(app, app.stateEngine()),
+                GoalPathStore.preferences(app),
+                new GoalMainLoop.Listener() {
+                    @Override public void onRound(int round, GoalMainLoop.Tactic tactic, String code) {
+                        TaskBus.get().info("goal", "第 " + round + " 轮 · " + tactic + " · " + code);
+                    }
+                    @Override public void onState(GoalCard card) { }
+                });
+        GoalCard card = loop.run(goal);
+        if (cancellation.get()) return cancelled();
+        String code = card.failureCode();
+        if (card.state() == GoalCard.State.FAILED
+                && ("NOT_AN_ACTION".equals(code) || "NO_CRITERIA".equals(code))) {
+            return planAndRun(goal, autoConfirm, allowReplan, cancellation);
+        }
+        String status = card.state() == GoalCard.State.SUCCEEDED ? "SUCCESS"
+                : card.state() == GoalCard.State.HELD ? "HELD" : "FAILED";
+        TaskBus.get().info("goal", "主循环结束：" + status + "（" + card.outcome().name() + "）");
+        return new AgentRuntime.TaskResult(card.id(), status, card.toJson());
     }
 
     private static AgentRuntime.TaskResult planAndRun(String goal, boolean autoConfirm,
@@ -85,7 +122,14 @@ public final class TaskRunner {
     }
 
     public static void cancel() {
+        cancel(null);
+    }
+
+    /** A mobile assistant may only cancel the nested skill that owns its token. */
+    public static void cancel(AtomicBoolean expectedOwner) {
+        synchronized(ADMISSION) {
         Execution execution = ACTIVE.get();
+        if(expectedOwner!=null&&(execution==null||execution.cancellation!=expectedOwner)) return;
         if (execution != null) {
             execution.cancellation.set(true);
             execution.thread.interrupt();
@@ -96,14 +140,19 @@ public final class TaskRunner {
             app.modelRouter().cloud().cancel();
             app.confirmations().cancelPending();
         }
+        }
     }
 
     private static AgentRuntime.TaskResult runExclusive(boolean autoConfirm, TaskOperation operation) throws Exception {
-        Execution execution = new Execution();
+        return runExclusive(autoConfirm,operation,null);
+    }
+
+    private static AgentRuntime.TaskResult runExclusive(boolean autoConfirm, TaskOperation operation,AtomicBoolean owner) throws Exception {
+        Execution execution = new Execution(owner);
         AtomicBoolean cancellation = execution.cancellation;
-        if (!ACTIVE.compareAndSet(null, execution)) {
+        synchronized(ADMISSION) { if (!ACTIVE.compareAndSet(null, execution)) {
             throw new IllegalStateException("已有任务正在规划或执行，请先停止或等待完成");
-        }
+        } }
         AgentApp app = AgentApp.get();
         try {
             app.riskGate().setTestModeAutoConfirm(BuildConfig.DEBUG && autoConfirm);
@@ -117,7 +166,7 @@ public final class TaskRunner {
             throw e;
         } finally {
             if (app != null) app.riskGate().setTestModeAutoConfirm(false);
-            ACTIVE.compareAndSet(execution, null);
+            synchronized(ADMISSION) { ACTIVE.compareAndSet(execution, null); }
         }
     }
 
@@ -129,13 +178,24 @@ public final class TaskRunner {
 
     private static AgentRuntime.TaskResult execute(TaskSpec task, boolean autoConfirm,
                                                     boolean allowReplan, AtomicBoolean cancellation) {
+        return execute(task, autoConfirm, allowReplan, cancellation, false);
+    }
+
+    private static AgentRuntime.TaskResult execute(TaskSpec task, boolean autoConfirm,
+                                                    boolean allowReplan, AtomicBoolean cancellation,
+                                                    boolean includeObservations) {
         return AgentApp.get().agentRuntime().runTask(task, BuildConfig.DEBUG && autoConfirm,
-                allowReplan, TaskBus.get().runtimeListener(), cancellation);
+                allowReplan, TaskBus.get().runtimeListener(), cancellation, includeObservations);
     }
 
     /** 直接按技能 ID 执行内置技能（快捷面板用，跳过自然语言规划）。 */
     public static AgentRuntime.TaskResult runSkill(String skillId, JSONObject args,
                                                    boolean autoConfirm) throws Exception {
+        return runSkill(skillId,args,autoConfirm,null);
+    }
+
+    public static AgentRuntime.TaskResult runSkill(String skillId,JSONObject args,
+                                                   boolean autoConfirm,AtomicBoolean owner) throws Exception {
         AgentApp app = AgentApp.get();
         JSONObject skillArgs = args == null ? new JSONObject() : args;
         List<ActionSpec> declaredActions = app.skillEngine().resolve(skillId, skillArgs);
@@ -163,7 +223,10 @@ public final class TaskRunner {
         limits.put("timeout_seconds", 300);
         taskJson.put("limits", limits);
 
-        return runTaskJson(taskJson.toString(), autoConfirm, true);
+        // 曾经写成 owner==null：DSH 传了 cancellation，于是重规划永远是关的。
+        // 真正的闸门在 AgentRuntime：RISK_REJECTED / APP_NOT_ALLOWED / 确认失败仍然不重规划。
+        return runExclusive(autoConfirm,cancellation -> execute(DslParser.parseTask(taskJson.toString()),
+                autoConfirm,true,cancellation,true),owner);
     }
 
     public static File writeResult(com.agentruntime.AgentApp app, JSONObject result) throws IOException {

@@ -1,0 +1,14 @@
+{
+  "skill_id": "sys.read_screen",
+  "version": "1.0",
+  "target_package": null,
+  "args": [],
+  "risk": "LOW",
+  "confirmation": "never",
+  "max_retries": 1,
+  "recovery": "读取当前前台界面的可见文字。无障碍没有可读节点时，若用户在设置中开启画面文字识别且系统支持，会尝试本机识别画面文字；识别结果可能有误，不能作为可点击控件的证明。受保护的画面可能无法读取。只想看设备电量/网络请用 sys.observe。",
+  "postconditions": [],
+  "steps": [
+    {"action": "read_screen", "params": {"max_chars": 4000}, "timeout_ms": 22000}
+  ]
+}
