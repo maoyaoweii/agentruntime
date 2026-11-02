@@ -1,7 +1,9 @@
 // In-process imitation of a ds-harness-remote Server (REST + Control
-// gateway, modelled on upstream apps/server) and a Host plugin (Noise
-// responder + harness.remote.* bridge, modelled on upstream
-// packages/plugin/src/server-connection.ts and harness-remote-bridge.ts).
+// gateway, modelled on upstream apps/server, plus an optional Relay node for
+// `transport.relay.attach` and WebRTC signaling like the hosted Server) and a
+// Host plugin (Noise responder + harness.remote.* bridge + WebRTC answerer,
+// modelled on upstream packages/plugin/src/server-connection.ts and
+// harness-remote-bridge.ts).
 // Upstream: https://github.com/liguobao/ds-harness-remote (MIT).
 import 'dart:async';
 import 'dart:convert';
@@ -12,7 +14,10 @@ import 'package:dsh_remote/src/carrier/tunnel_carrier.dart' show harnessRemoteAl
 import 'package:dsh_remote/src/crypto/noise_ik.dart';
 import 'package:dsh_remote/src/protocol/control.dart';
 import 'package:dsh_remote/src/protocol/messages.dart';
+import 'package:dsh_remote/src/transport/rtc_chunking.dart';
 import 'package:dsh_remote/src/util/bytes.dart';
+
+import 'fake_rtc.dart';
 
 class FakeDevice {
   FakeDevice(this.descriptor);
@@ -45,6 +50,18 @@ class FakeLink {
   final String client;
   String stage = 'pending';
   final Map<String, int> counters = {};
+
+  /// Relay assignment per device id (`transport.relay.attach`).
+  final Map<String, Map<String, Object?>> assignments = {};
+}
+
+/// One device side attached to the fake Relay node.
+class FakeRelayAttachment {
+  FakeRelayAttachment(this.ws, this.connectionId, this.deviceId, this.peerDeviceId);
+  final WebSocket ws;
+  final String connectionId;
+  final String deviceId;
+  final String peerDeviceId;
 }
 
 class FakeRemoteServer {
@@ -177,6 +194,11 @@ class FakeRemoteServer {
       _accept(ws);
       return;
     }
+    if (path == '/ws/v1/relay') {
+      final ws = await WebSocketTransformer.upgrade(request);
+      _acceptRelay(ws);
+      return;
+    }
     if (request.method == 'GET' && path == '/health') return json(200, {'status': 'ok'});
     if (request.method == 'GET' && path == '/api/v1/auth/oauth/providers') {
       return json(200, {
@@ -261,6 +283,10 @@ class FakeRemoteServer {
         'nextCursor': null,
       });
     }
+    if (request.method == 'GET' && path == '/api/v1/turn/credentials') {
+      turnRequests.add(request.uri.queryParameters['connection_id'] ?? '');
+      return json(200, {'iceServers': iceServers});
+    }
     final presenceMatch = RegExp(r'^/api/v1/devices/([^/]+)/presence$').firstMatch(path);
     if (request.method == 'GET' && presenceMatch != null) {
       presenceRequests++;
@@ -290,6 +316,110 @@ class FakeRemoteServer {
   int presenceRequests = 0;
 
   final List<String> protocolErrors = [];
+
+  /// Raw Control frames received from client devices.
+  final List<String> clientControlFrames = [];
+
+  /// `relay` frames forwarded on Control sockets.
+  int controlRelayFrames = 0;
+
+  // --- WebRTC (hosted Server) --------------------------------------------------
+
+  /// Negotiates the direct transports in [webrtcTransports] with peers that
+  /// offer them, sends `webrtcEnabled: true` and forwards signaling.
+  bool webrtc = false;
+  Set<String> webrtcTransports = {'transport.lan', 'transport.p2p', 'transport.turn'};
+  int? webrtcFallbackTimeoutMs;
+
+  /// `GET /api/v1/turn/credentials` answer, and the connection ids asked.
+  List<Map<String, Object?>> iceServers = [];
+  final List<String> turnRequests = [];
+
+  // --- Relay node (`transport.relay.attach`) ---------------------------------
+
+  /// Negotiates `transport.relay.attach` and assigns this node when both
+  /// sides offer it (upstream hosted Server); off = self-hosted apps/server.
+  bool relayAttach = false;
+  int relayEpoch = 7;
+
+  /// Pings every attached socket right after `relay.ready`.
+  bool relayPing = true;
+  final Map<String, Map<String, Object?>> _tickets = {};
+  final Map<String, FakeRelayAttachment> relayAttachments = {};
+
+  /// Every `relay.attach` payload the node accepted, in order.
+  final List<Map<String, Object?>> relayAttaches = [];
+
+  /// `<deviceId> <nonce>` of every pong the node received.
+  final List<String> relayPongs = [];
+  int relayFrames = 0;
+
+  Map<String, Object?> _assign(FakeLink link, String deviceId, String peerDeviceId) {
+    final ticket = 'dshrt.${_secret()}';
+    _tickets[ticket] = {'connectionId': link.id, 'deviceId': deviceId, 'peerDeviceId': peerDeviceId};
+    return link.assignments[deviceId] = {
+      'relayEndpoint': '${url.toString().replaceFirst('http', 'ws')}/ws/v1/relay',
+      'relayTicket': ticket,
+      'relayNodeId': 'fake-relay-1',
+      'relayEpoch': relayEpoch,
+    };
+  }
+
+  void _acceptRelay(WebSocket ws) {
+    FakeRelayAttachment? attached;
+    void send(String type, Map<String, Object?> payload) {
+      if (ws.closeCode == null) ws.add(encodeRelayDataFrame(ControlFrame(type, payload)));
+    }
+
+    ws.listen(
+      (raw) {
+        final frame = decodeRelayDataFrame(raw as String);
+        final p = frame.payload;
+        final current = attached;
+        if (current == null) {
+          final ticket = frame.type == 'relay.attach' ? _tickets.remove(p['ticket']) : null;
+          if (ticket == null ||
+              ticket['connectionId'] != p['connectionId'] ||
+              ticket['deviceId'] != p['deviceId'] ||
+              ticket['peerDeviceId'] != p['peerDeviceId']) {
+            unawaited(ws.close(4001, 'RELAY_TICKET_INVALID'));
+            return;
+          }
+          final side = attached = FakeRelayAttachment(
+            ws,
+            p['connectionId']! as String,
+            p['deviceId']! as String,
+            p['peerDeviceId']! as String,
+          );
+          relayAttachments['${side.connectionId}:${side.deviceId}'] = side;
+          relayAttaches.add(p);
+          send('relay.ready', {'connectionId': side.connectionId, 'epoch': relayEpoch});
+          if (relayPing) send('ping', {'nonce': 'node-${_secret()}'});
+          return;
+        }
+        switch (frame.type) {
+          case 'pong':
+            relayPongs.add('${current.deviceId} ${p['nonce']}');
+          case 'relay':
+            if (p['connectionId'] != current.connectionId || p['targetDeviceId'] != current.peerDeviceId) {
+              unawaited(ws.close(4001, 'INVALID_MESSAGE'));
+              return;
+            }
+            relayFrames++;
+            relayAttachments['${current.connectionId}:${current.peerDeviceId}']?.ws.add(raw);
+        }
+      },
+      onDone: () {
+        final side = attached;
+        if (side == null || relayAttachments['${side.connectionId}:${side.deviceId}'] != side) return;
+        relayAttachments.remove('${side.connectionId}:${side.deviceId}');
+        final peer = relayAttachments['${side.connectionId}:${side.peerDeviceId}']?.ws;
+        if (peer != null && peer.closeCode == null) {
+          peer.add(encodeRelayDataFrame(ControlFrame('relay.detach', {'connectionId': side.connectionId})));
+        }
+      },
+    );
+  }
 
   void _send(FakePeer peer, String type, Map<String, Object?> payload) {
     if (peer.ws.closeCode != null) return;
@@ -324,6 +454,7 @@ class FakeRemoteServer {
     ws.listen(
       (raw) {
         try {
+          if (peer?.role == 'client') clientControlFrames.add(raw as String);
           final frame = decodeControlFrame(raw as String);
           if (peer == null) {
             if (frame.type != 'hello') throw const ProtocolError('AUTH_REQUIRED');
@@ -352,8 +483,13 @@ class FakeRemoteServer {
               'heartbeatIntervalMs': 25000,
               'maxControlFrameBytes': maxControlFrameBytes,
               'maxRelayFrameBytes': maxRelayFrameBytes,
-              'capabilities': caps.contains('transport.relay') ? ['transport.relay'] : <String>[],
-              'webrtcEnabled': false,
+              'capabilities': [
+                if (webrtc) ...webrtcTransports.where(caps.contains),
+                if (caps.contains('transport.relay')) 'transport.relay',
+                if (relayAttach && caps.contains('transport.relay.attach')) 'transport.relay.attach',
+              ],
+              'webrtcEnabled': webrtc,
+              'webrtcFallbackTimeoutMs': ?webrtcFallbackTimeoutMs,
             });
             return;
           }
@@ -400,13 +536,19 @@ class FakeRemoteServer {
         }
         final link = FakeLink(uuidV7(), host.id, peer.id);
         links[link.id] = link;
+        final attach =
+            relayAttach &&
+            peer.capabilities.contains('transport.relay.attach') &&
+            host.capabilities.contains('transport.relay.attach');
         _send(host, 'connect.incoming', {
           'connectionId': link.id,
           'clientDeviceId': peer.id,
           'clientIdentityKey': devices[peer.id]!.descriptor['identityKey'],
           'authorization': 'account',
-          'preferredTransports': ['relay'],
+          'preferredTransports': webrtc ? p['preferredTransports'] : ['relay'],
+          if (attach) ..._assign(link, host.id, peer.id),
         });
+        if (attach) _assign(link, peer.id, host.id);
         return;
     }
     final link = links[p['connectionId']];
@@ -420,6 +562,18 @@ class FakeRemoteServer {
         if (peer.id != link.host) throw const ProtocolError('INVALID_MESSAGE');
         if (frame.type == 'connect.rejected') links.remove(link.id);
         link.stage = 'accepted';
+        final assignment = link.assignments[link.client];
+        if (frame.type == 'connect.accepted' && assignment != null) {
+          other.ws.add(encodeControlFrame(ControlFrame('connect.accepted', {...p, ...assignment})));
+          return;
+        }
+      case 'transport.selected':
+        // The Host confirms its own WebRTC selection too (plugin 0.6.0).
+        if (p['transport'] != 'relay' ? !webrtc : peer.id != link.client) {
+          throw const ProtocolError('INVALID_MESSAGE');
+        }
+      case 'signal.offer' || 'signal.answer' || 'signal.ice':
+        if (!webrtc) return;
       case 'secure.handshake':
         final step = p['step'];
         if (step == 1 && peer.id == link.client && link.stage == 'accepted') {
@@ -435,6 +589,7 @@ class FakeRemoteServer {
           throw const ProtocolError('INVALID_MESSAGE');
         }
         link.counters[peer.id] = counter;
+        controlRelayFrames++;
       default:
         return;
     }
@@ -496,12 +651,27 @@ class FakeHostStream {
 }
 
 class FakeHostConnection {
-  FakeHostConnection(this.host, this.connectionId, this.clientId, this.noise);
+  FakeHostConnection(this.host, this.connectionId, this.clientId, this.noise, this.assignment);
 
   final FakeRemoteHost host;
   final String connectionId;
   final String clientId;
   final NoiseIkSession noise;
+
+  /// Relay assignment from `connect.incoming`; the Host then holds the
+  /// handshake until `transport.selected`, and attaches (plugin 0.6.0).
+  final Map<String, Object?>? assignment;
+  WebSocket? dataSocket;
+  bool selected = false;
+  Map<String, Object?>? pendingHandshake;
+
+  /// WebRTC answer to the client's offer; ciphertext uses it once the client
+  /// selected `lan` / `p2p` / `turn`.
+  FakeHostPeer? rtc;
+  String? selectedTransport;
+  bool get viaRtc => rtc != null && selectedTransport != null && selectedTransport != 'relay';
+  final RtcChunkCodec rtcIn = RtcChunkCodec();
+  final RtcChunkCodec rtcOut = RtcChunkCodec();
   final SecureMessageCodec incoming = SecureMessageCodec();
   final SecureMessageCodec outgoing = SecureMessageCodec();
   final Map<String, FakeHostStream> streams = {};
@@ -511,13 +681,23 @@ class FakeHostConnection {
 
   void send(RemoteMessage message) {
     for (final fragment in outgoing.encode(message.encode())) {
+      if (viaRtc) {
+        rtcOut.encode(noise.encrypt(fragment)).forEach(rtc!.send);
+        continue;
+      }
       final counter = noise.sendingCounter;
-      host._sendControl('relay', {
+      final payload = {
         'connectionId': connectionId,
         'targetDeviceId': clientId,
         'counter': counter,
         'ciphertext': toBase64Url(noise.encrypt(fragment)),
-      });
+      };
+      final data = dataSocket;
+      if (data != null) {
+        data.add(encodeRelayDataFrame(ControlFrame('relay', payload)));
+      } else {
+        host._sendControl('relay', payload);
+      }
     }
   }
 
@@ -572,6 +752,21 @@ class FakeRemoteHost {
   WebSocket? _ws;
   final Map<String, FakeHostConnection> connections = {};
 
+  /// Offers `transport.relay.attach` in hello (plugin 0.6.0); false = an
+  /// older Host.
+  bool relayAttach = true;
+
+  /// Offers `transport.lan/p2p/turn` and answers offers over [rtcNetwork]
+  /// (a plugin with a WebRTC backend).
+  bool webrtc = false;
+  FakeRtcNetwork? rtcNetwork;
+
+  /// Candidates the Host received, by connection id, and offers in order.
+  final Map<String, int> rtcCandidates = {};
+  String rtcAnswerSdp = 'v=0 fake-answer';
+  final List<Map<String, Object?>> extraRtcCandidates = [];
+  final List<String> rtcOffers = [];
+
   /// `harness.transport.describe` capabilities.
   List<String> capabilities = ['transport.relay', 'harness.remote.v3', 'harness.remote.transfer.v1'];
 
@@ -603,6 +798,9 @@ class FakeRemoteHost {
   final Map<String, FakeHostStream> eventStreams = {};
   int _clientIds = 0;
 
+  /// Connection ids whose Noise handshake this Host completed, in order.
+  final List<String> handshakes = [];
+
   Future<void> goOnline() async {
     final ws = _ws = await WebSocket.connect('${server.url.toString().replaceFirst('http', 'ws')}/ws/v1/connect');
     final acked = Completer<void>();
@@ -619,7 +817,11 @@ class FakeRemoteHost {
       'deviceId': deviceId,
       'accessToken': _tokens['accessToken'],
       'protocols': [1],
-      'capabilities': ['transport.relay'],
+      'capabilities': [
+        if (webrtc) ...['transport.lan', 'transport.p2p', 'transport.turn'],
+        'transport.relay',
+        if (relayAttach) 'transport.relay.attach',
+      ],
       'clientVersion': '0.5.17',
       'harnessVersion': '0.2.1-rc.2',
     });
@@ -676,32 +878,163 @@ class FakeRemoteHost {
             remotePublicKey: p['clientIdentityKey']! as String,
             prologue: createNoisePrologue(connectionId, deviceId, clientId),
           ),
+          p['relayTicket'] == null ? null : p,
         );
         _sendControl('connect.accepted', {'connectionId': connectionId});
       case 'secure.handshake':
         final connection = connections[p['connectionId']];
         if (connection == null) return;
-        connection.noise.readHandshake(fromBase64Url(p['data']! as String));
-        final reply = connection.noise.writeHandshake();
-        connection.ready = true;
-        _sendControl('secure.handshake', {
+        // Like the plugin: with a data plane still to choose, wait for the
+        // client's transport.selected.
+        if ((connection.assignment != null || connection.rtc != null) && !connection.selected) {
+          connection.pendingHandshake = p;
+          return;
+        }
+        _completeHandshake(connection, p);
+      case 'signal.offer':
+        final connection = connections[p['connectionId']];
+        if (connection == null || !webrtc) return;
+        rtcOffers.add(connection.connectionId);
+        final rtc = rtcNetwork!.answer(
+          p['sdp']! as String,
+          onMessage: (data) => unawaited(_receiveRtc(connection, data)),
+          onOpen: () => _sendControl('transport.selected', {
+            'connectionId': connection.connectionId,
+            'targetDeviceId': connection.clientId,
+            'transport': 'p2p',
+          }),
+        );
+        if (rtc == null) return;
+        connection.rtc = rtc;
+        _sendControl('signal.answer', {
           'connectionId': connection.connectionId,
           'targetDeviceId': connection.clientId,
-          'step': 2,
-          'data': toBase64Url(reply),
+          'sdp': rtcAnswerSdp,
         });
-      case 'relay':
+        _sendControl('signal.ice', {
+          'connectionId': connection.connectionId,
+          'targetDeviceId': connection.clientId,
+          'candidate': {'candidate': 'candidate:2 1 udp 2122260223 192.168.1.30 40000 typ host', 'sdpMid': '0'},
+        });
+        for (final candidate in extraRtcCandidates) {
+          _sendControl('signal.ice', {
+            'connectionId': connection.connectionId,
+            'targetDeviceId': connection.clientId,
+            'candidate': candidate,
+          });
+        }
+      case 'signal.ice':
+        final id = p['connectionId']! as String;
+        rtcCandidates[id] = (rtcCandidates[id] ?? 0) + 1;
+      case 'transport.selected':
         final connection = connections[p['connectionId']];
         if (connection == null) return;
-        if (p['counter'] != connection.noise.receivingCounter) {
-          throw StateError('relay counter mismatch');
+        connection.selectedTransport = p['transport']! as String;
+        if (!connection.viaRtc) {
+          connection.rtc?.close();
+          connection.rtc = null;
+          // The plugin serializes Control frames, so a handshake that arrives
+          // while it attaches still waits for the data socket.
+          if (connection.assignment != null) await _attach(connection);
         }
-        final plain = connection.incoming.decode(connection.noise.decrypt(fromBase64Url(p['ciphertext']! as String)));
-        if (plain == null) return;
-        await _onMessage(connection, RemoteMessage.decode(plain));
+        connection.selected = true;
+        final pending = connection.pendingHandshake;
+        if (pending != null) _completeHandshake(connection, pending);
+      case 'relay':
+        final connection = connections[p['connectionId']];
+        if (connection == null || connection.dataSocket != null) return;
+        await _receiveRelay(connection, p);
       case 'error':
         final id = p['connectionId'];
-        if (id != null) connections.remove(id);
+        if (id == null) return;
+        final connection = connections.remove(id);
+        connection?.rtc?.close();
+        unawaited(connection?.dataSocket?.close());
+    }
+  }
+
+  Future<void> _receiveRtc(FakeHostConnection connection, Uint8List data) async {
+    if (!connection.viaRtc) throw StateError('ciphertext on a DataChannel the client did not select');
+    final ciphertext = connection.rtcIn.decode(data);
+    if (ciphertext == null) return;
+    final plain = connection.incoming.decode(connection.noise.decrypt(ciphertext));
+    if (plain == null) return;
+    await _onMessage(connection, RemoteMessage.decode(plain));
+  }
+
+  /// Closes every client's DataChannel from the Host side.
+  void closeRtc() {
+    for (final connection in connections.values) {
+      connection.rtc?.close();
+    }
+  }
+
+  void _completeHandshake(FakeHostConnection connection, Map<String, Object?> p) {
+    connection.pendingHandshake = null;
+    connection.noise.readHandshake(fromBase64Url(p['data']! as String));
+    final reply = connection.noise.writeHandshake();
+    connection.ready = true;
+    handshakes.add(connection.connectionId);
+    _sendControl('secure.handshake', {
+      'connectionId': connection.connectionId,
+      'targetDeviceId': connection.clientId,
+      'step': 2,
+      'data': toBase64Url(reply),
+    });
+  }
+
+  Future<void> _receiveRelay(FakeHostConnection connection, Map<String, Object?> p) async {
+    if (p['counter'] != connection.noise.receivingCounter) {
+      throw StateError('relay counter mismatch');
+    }
+    final plain = connection.incoming.decode(connection.noise.decrypt(fromBase64Url(p['ciphertext']! as String)));
+    if (plain == null) return;
+    await _onMessage(connection, RemoteMessage.decode(plain));
+  }
+
+  /// Attaches [connection] to its assigned Relay node, like plugin 0.6.0.
+  Future<void> _attach(FakeHostConnection connection) async {
+    final assignment = connection.assignment!;
+    final ws = connection.dataSocket = await WebSocket.connect(assignment['relayEndpoint']! as String);
+    final ready = Completer<void>();
+    ws.listen(
+      (raw) {
+        final frame = decodeRelayDataFrame(raw as String);
+        switch (frame.type) {
+          case 'relay.ready':
+            ready.complete();
+          case 'ping':
+            ws.add(encodeRelayDataFrame(ControlFrame('pong', frame.payload)));
+          case 'relay':
+            unawaited(_receiveRelay(connection, frame.payload));
+          case 'relay.detach':
+            connections.remove(connection.connectionId);
+            unawaited(ws.close());
+        }
+      },
+      onDone: () {
+        if (connections[connection.connectionId] == connection) connections.remove(connection.connectionId);
+      },
+    );
+    ws.add(
+      encodeRelayDataFrame(
+        ControlFrame('relay.attach', {
+          'connectionId': connection.connectionId,
+          'deviceId': deviceId,
+          'peerDeviceId': connection.clientId,
+          'ticket': assignment['relayTicket'],
+        }),
+      ),
+    );
+    await ready.future;
+  }
+
+  /// Closes the Host side of every attached Relay data socket (the node
+  /// then sends `relay.detach` to the clients).
+  Future<void> detachClients() async {
+    for (final connection in [...connections.values]) {
+      connections.remove(connection.connectionId);
+      await connection.dataSocket?.close();
     }
   }
 

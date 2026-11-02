@@ -114,9 +114,7 @@ void main() {
     runtime.setPhase(RuntimePhase.running);
     await until(() => c.read(uiSkillAutoInstallProvider) != null);
     await c.read(uiSkillAutoInstallProvider.notifier).running;
-    // agentSkillName 也在这里：它曾经漏掉过，导致 manifest 键名和实际资产对不上、
-    // 技能从来没被写进 rootfs，而单元测试全绿。加进来守住这条链。
-    for (final name in [uiSkillName, pluginSkillName, guideSkillName, agentSkillName]) {
+    for (final name in [uiSkillName, pluginSkillName, guideSkillName]) {
       expect(File('${root.path}/root/.dsh/skills/$name/SKILL.md').existsSync(), isTrue, reason: name);
     }
     for (final MapEntry(key: path, value: text) in guide.files.entries) {

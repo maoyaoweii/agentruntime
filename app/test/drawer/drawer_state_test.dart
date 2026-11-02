@@ -134,6 +134,32 @@ void main() {
       expect(blocks.whereType<FolderBlock>().map((f) => f.folder.id), ['f1']);
     });
 
+    test('folder buckets retain tie order, pin priority and the last assignment', () {
+      const view = DrawerView(
+        loaded: true,
+        folders: [
+          DrawerFolder(id: 'f1', name: 'First', sessionIds: ['a', 'b', 'c']),
+          // As folderOf specifies, the last assignment owns a duplicate.
+          DrawerFolder(id: 'f2', name: 'Second', sessionIds: ['d', 'c']),
+          DrawerFolder(id: 'f3', name: 'Empty', sessionIds: ['missing']),
+        ],
+      );
+      final blocks = _blocks(
+        sessions: [
+          for (final id in ['e', 'd', 'c', 'b', 'a']) _s(id, _now),
+        ],
+        view: view,
+        pinned: ['d', 'e', 'b', 'c', 'missing'],
+      );
+      expect(_ids(blocks.whereType<PinnedBlock>().single), ['e']);
+      final folders = blocks.whereType<FolderBlock>().toList();
+      expect(folders.map((f) => f.folder.id), ['f1', 'f2', 'f3']);
+      expect(_ids(folders[0]), ['b', 'a']);
+      expect(_ids(folders[1]), ['c', 'd']);
+      expect(folders[2].items, isEmpty);
+      expect([for (final block in blocks) ..._ids(block)], ['e', 'b', 'a', 'c', 'd']);
+    });
+
     test('filters give one flat block', () {
       expect(_ids(_blocks(filter: DrawerFilter.running).single), ['a']);
       expect(_ids(_blocks(filter: DrawerFilter.pending, pending: {'c': PendingKind.approval}).single), ['c']);
@@ -374,6 +400,79 @@ void main() {
   });
 
   group('creation times', () {
+    for (final oldFails in [false, true]) {
+      test('host switch drains queued creation times after old ${oldFails ? 'failure' : 'success'}', () async {
+        final old = [Completer<DateTime?>(), Completer<DateTime?>()];
+        final calls = <String>[];
+        final newTimes = {'new-a': _now, 'new-b': _now.subtract(const Duration(days: 1))};
+        final c = ProviderContainer(
+          overrides: [
+            sessionCreatedFetcherProvider.overrideWithValue((id) {
+              calls.add(id);
+              if (id == 'old-a') return old[0].future;
+              if (id == 'old-b') return old[1].future;
+              return Future.value(newTimes[id]);
+            }),
+          ],
+        );
+        addTearDown(c.dispose);
+        c.listen(sessionCreatedProvider, (_, _) {});
+        await _settle();
+        c.read(sessionCreatedProvider.notifier).ensure(['old-a', 'old-b']);
+        expect(calls, ['old-a', 'old-b']);
+
+        final nextHost = HostRef.ssh('next-host');
+        c.read(activeHostProvider.notifier).select(nextHost);
+        await _settle();
+        c.read(sessionCreatedProvider.notifier).ensure(newTimes.keys);
+        expect(calls, ['old-a', 'old-b']);
+        for (final pending in old) {
+          if (oldFails) {
+            pending.completeError(const DshClosedException('old host closed'));
+          } else {
+            pending.complete(_now.subtract(const Duration(days: 30)));
+          }
+        }
+        await _settle();
+        expect(calls, ['old-a', 'old-b', 'new-a', 'new-b']);
+        expect(c.read(sessionCreatedProvider), newTimes);
+      });
+    }
+
+    test('old host completion leaves the new host same-id request marked in flight', () async {
+      final oldShared = Completer<DateTime?>();
+      final oldOther = Completer<DateTime?>();
+      final newShared = Completer<DateTime?>();
+      var sharedCalls = 0;
+      final c = ProviderContainer(
+        overrides: [
+          sessionCreatedFetcherProvider.overrideWithValue((id) {
+            if (id == 'other') return oldOther.future;
+            sharedCalls++;
+            return sharedCalls == 1 ? oldShared.future : newShared.future;
+          }),
+        ],
+      );
+      addTearDown(c.dispose);
+      c.listen(sessionCreatedProvider, (_, _) {});
+      await _settle();
+      c.read(sessionCreatedProvider.notifier).ensure(['shared', 'other']);
+      c.read(activeHostProvider.notifier).select(HostRef.ssh('next-host'));
+      await _settle();
+      c.read(sessionCreatedProvider.notifier).ensure(['shared']);
+      oldOther.complete(null);
+      await _settle();
+      expect(sharedCalls, 2);
+      oldShared.complete(_now.subtract(const Duration(days: 30)));
+      await _settle();
+      expect(c.read(sessionCreatedProvider), isEmpty);
+      c.read(sessionCreatedProvider.notifier).ensure(['shared']);
+      expect(sharedCalls, 2);
+      newShared.complete(_now);
+      await _settle();
+      expect(c.read(sessionCreatedProvider), {'shared': _now});
+    });
+
     test('fetched once each, two at a time, kept per host', () async {
       final asked = <String>[];
       var inFlight = 0;

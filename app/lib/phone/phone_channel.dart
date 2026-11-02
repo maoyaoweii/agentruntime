@@ -46,6 +46,126 @@ enum PhoneBackgroundMode {
   };
 }
 
+/// Versioned privilege choices. The legacy three-way enum remains stable for existing pages.
+enum PhonePrivilegedMode {
+  off,
+  shizuku,
+  sui,
+  root,
+  adb;
+
+  static PhonePrivilegedMode? tryParse(Object? wire) => switch (wire) {
+    'off' => off,
+    'shizuku' => shizuku,
+    'sui' => sui,
+    'root' => root,
+    'adb' => adb,
+    _ => null,
+  };
+}
+
+class PhoneRootStatus {
+  const PhoneRootStatus({
+    this.checked = false,
+    this.available,
+    this.connected = false,
+    this.starting = false,
+    this.reasonCode,
+  });
+
+  factory PhoneRootStatus.fromMap(Map<Object?, Object?> m) => PhoneRootStatus(
+    checked: _flag(m['checked']),
+    available: _maybeFlag(m['available']),
+    connected: _flag(m['connected']),
+    starting: _flag(m['starting']),
+    reasonCode: _text(m['reasonCode']),
+  );
+
+  final bool checked;
+  final bool? available;
+  final bool connected;
+  final bool starting;
+  final String? reasonCode;
+}
+
+enum PhoneKeepPhase {
+  disabled,
+  idle,
+  restoring,
+  connected,
+  waiting,
+  failed;
+
+  static PhoneKeepPhase parse(Object? wire) => values.asNameMap()[wire] ?? waiting;
+}
+
+/// Persisted keep intent and its transport state; connected does not imply display/input readiness.
+class PhonePrivilegedKeepStatus {
+  const PhonePrivilegedKeepStatus({
+    this.enabled = false,
+    this.mode = PhonePrivilegedMode.off,
+    this.phase = PhoneKeepPhase.disabled,
+    this.reasonCode,
+  });
+
+  factory PhonePrivilegedKeepStatus.parse(Object? value) {
+    final m = _map(value);
+    if (m.isEmpty) return const PhonePrivilegedKeepStatus();
+    return PhonePrivilegedKeepStatus(
+      enabled: _flag(m['enabled']),
+      mode: PhonePrivilegedMode.tryParse(m['mode']) ?? PhonePrivilegedMode.off,
+      phase: PhoneKeepPhase.parse(m['phase']),
+      reasonCode: _text(m['reasonCode']),
+    );
+  }
+
+  final bool enabled;
+  final PhonePrivilegedMode mode;
+  final PhoneKeepPhase phase;
+  final String? reasonCode;
+}
+
+class PhonePrivilegedStatus {
+  const PhonePrivilegedStatus({
+    this.mode = PhonePrivilegedMode.off,
+    this.ready = false,
+    this.reason,
+    this.supportedModes = const [],
+    this.recommendedMode = PhonePrivilegedMode.off,
+    this.grantPath = 'setup',
+    this.rootSelected = false,
+    this.keep = const PhonePrivilegedKeepStatus(),
+  });
+
+  static PhonePrivilegedStatus? parse(Object? value) {
+    final m = _map(value);
+    if (m['v'] is! int || m['v'] != 1) return null;
+    final parsed = PhonePrivilegedMode.tryParse(m['mode']);
+    final supported = [for (final name in _strings(m['supportedModes'])) ?PhonePrivilegedMode.tryParse(name)];
+    final recommended = PhonePrivilegedMode.tryParse(m['recommendedMode']);
+    const grantPaths = {'granted', 'shizuku', 'shizukuPermission', 'sui', 'suiPermission', 'root', 'adb', 'setup'};
+    return PhonePrivilegedStatus(
+      mode: parsed ?? PhonePrivilegedMode.off,
+      ready: supported.contains(parsed) && _flag(m['ready']),
+      reason: _text(m['reason']),
+      supportedModes: supported.toSet().toList(),
+      recommendedMode: supported.contains(recommended) ? recommended! : PhonePrivilegedMode.off,
+      grantPath: grantPaths.contains(m['grantPath']) ? m['grantPath'] as String : 'setup',
+      rootSelected: _flag(m['rootSelected']),
+      keep: PhonePrivilegedKeepStatus.parse(m['keep']),
+    );
+  }
+
+  final PhonePrivilegedMode mode;
+  final bool ready;
+  final String? reason;
+  final List<PhonePrivilegedMode> supportedModes;
+  final PhonePrivilegedMode recommendedMode;
+  final String grantPath;
+  final bool rootSelected;
+  final PhonePrivilegedKeepStatus keep;
+}
+
 class PhoneA11yStatus {
   const PhoneA11yStatus({this.enabled = false, this.serviceConnected = false});
 
@@ -62,14 +182,27 @@ class PhoneA11yStatus {
 }
 
 class ShizukuStatus {
-  const ShizukuStatus({this.installed = false, this.running = false, this.granted = false});
+  const ShizukuStatus({
+    this.installed = false,
+    this.running = false,
+    this.granted = false,
+    this.provider,
+    this.appInstalled,
+  });
 
-  factory ShizukuStatus.fromMap(Map<Object?, Object?> m) =>
-      ShizukuStatus(installed: _flag(m['installed']), running: _flag(m['running']), granted: _flag(m['granted']));
+  factory ShizukuStatus.fromMap(Map<Object?, Object?> m) => ShizukuStatus(
+    installed: _flag(m['installed']),
+    running: _flag(m['running']),
+    granted: _flag(m['granted']),
+    provider: const ['shizuku', 'sui'].contains(m['provider']) ? m['provider'] as String : null,
+    appInstalled: _maybeFlag(m['appInstalled']),
+  );
 
   final bool installed;
   final bool running;
   final bool granted;
+  final String? provider;
+  final bool? appInstalled;
 }
 
 class AdbStatus {
@@ -95,6 +228,8 @@ class PhoneBackgroundStatus {
     this.androidOk = false,
     this.shizuku = const ShizukuStatus(),
     this.adb = const AdbStatus(),
+    this.root = const PhoneRootStatus(),
+    this.privileged,
   });
 
   factory PhoneBackgroundStatus.fromMap(Map<Object?, Object?> m) => PhoneBackgroundStatus(
@@ -104,6 +239,8 @@ class PhoneBackgroundStatus {
     androidOk: _flag(m['androidOk']),
     shizuku: ShizukuStatus.fromMap(_map(m['shizuku'])),
     adb: AdbStatus.fromMap(_map(m['adb'])),
+    root: PhoneRootStatus.fromMap(_map(m['root'])),
+    privileged: PhonePrivilegedStatus.parse(m['privileged']),
   );
 
   final PhoneBackgroundMode mode;
@@ -118,6 +255,25 @@ class PhoneBackgroundStatus {
   final bool androidOk;
   final ShizukuStatus shizuku;
   final AdbStatus adb;
+  final PhoneRootStatus root;
+  final PhonePrivilegedStatus? privileged;
+
+  PhonePrivilegedMode get effectiveMode =>
+      privileged?.mode ??
+      switch (mode) {
+        PhoneBackgroundMode.off => PhonePrivilegedMode.off,
+        PhoneBackgroundMode.shizuku => PhonePrivilegedMode.shizuku,
+        PhoneBackgroundMode.adb => PhonePrivilegedMode.adb,
+      };
+
+  bool get effectiveReady => privileged?.ready ?? ready;
+  String? get effectiveReason => privileged == null ? reason : privileged!.reason;
+
+  PhonePrivilegedKeepStatus get keep => privileged?.keep ?? const PhonePrivilegedKeepStatus();
+
+  List<PhonePrivilegedMode> get supportedModes =>
+      privileged?.supportedModes ??
+      const [PhonePrivilegedMode.off, PhonePrivilegedMode.shizuku, PhonePrivilegedMode.adb];
 }
 
 class PhoneTaskStatus {
@@ -204,6 +360,20 @@ class PhoneDevice {
   };
 }
 
+class A11yKeeperStatus {
+  const A11yKeeperStatus({this.granted = false, this.path = 'setup', this.command = ''});
+
+  factory A11yKeeperStatus.fromMap(Map<Object?, Object?> m) => A11yKeeperStatus(
+    granted: _flag(m['granted']),
+    path: _text(m['path']) ?? 'setup',
+    command: _text(m['command']) ?? '',
+  );
+
+  final bool granted;
+  final String path;
+  final String command;
+}
+
 /// Snapshot of the native phone-control module (`status` / status events).
 class PhoneStatus {
   const PhoneStatus({
@@ -212,6 +382,7 @@ class PhoneStatus {
     this.enabled = false,
     this.bridgeListening = false,
     this.a11y = const PhoneA11yStatus(),
+    this.a11yKeeper = const A11yKeeperStatus(),
     this.overlay = false,
     this.notifications = false,
     this.confirmationNotifications,
@@ -226,6 +397,7 @@ class PhoneStatus {
       enabled = false,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
+      a11yKeeper = const A11yKeeperStatus(),
       overlay = false,
       notifications = false,
       confirmationNotifications = null,
@@ -237,6 +409,7 @@ class PhoneStatus {
     enabled: _flag(m['enabled']),
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
+    a11yKeeper: A11yKeeperStatus.fromMap(_map(m['a11yKeeper'])),
     overlay: _flag(m['overlay']),
     notifications: _flag(m['notifications']),
     confirmationNotifications: _maybeFlag(m['confirmationNotifications']),
@@ -255,6 +428,7 @@ class PhoneStatus {
   final bool enabled;
   final bool bridgeListening;
   final PhoneA11yStatus a11y;
+  final A11yKeeperStatus a11yKeeper;
   final bool overlay;
 
   /// The app may post notifications (confirmations, 停止, ADB pairing code).
@@ -273,6 +447,7 @@ class PhoneStatus {
     enabled: enabled ?? this.enabled,
     bridgeListening: bridgeListening,
     a11y: a11y,
+    a11yKeeper: a11yKeeper,
     overlay: overlay,
     notifications: notifications,
     confirmationNotifications: confirmationNotifications,
@@ -402,12 +577,14 @@ class PhoneFinish {
 
 /// `{ok, reason?}` replies.
 class PhoneResult {
-  const PhoneResult(this.ok, [this.reason]);
+  const PhoneResult(this.ok, [this.reason, this.pending = false]);
 
-  factory PhoneResult.fromMap(Map<Object?, Object?> m) => PhoneResult(_flag(m['ok']), _text(m['reason']));
+  factory PhoneResult.fromMap(Map<Object?, Object?> m) =>
+      PhoneResult(_flag(m['ok']), _text(m['reason']), _flag(m['pending']));
 
   final bool ok;
   final String? reason;
+  final bool pending;
 }
 
 /// Reply of `testScreen`: the main screen read once.
@@ -762,6 +939,8 @@ class PhoneChannel {
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 
+  Future<PhoneResult> grantSecureSettings() => _result('grantSecureSettings');
+
   /// This app's system "App info" page (restricted settings, notifications).
   Future<bool> openAppDetails() => _bool('openAppDetails');
 
@@ -778,6 +957,18 @@ class PhoneChannel {
 
   Future<PhoneResult> setBackgroundMode(PhoneBackgroundMode mode) => _result('setBackgroundMode', {'mode': mode.name});
 
+  /// The caller gates these actions on the advertised versioned capabilities.
+  Future<PhoneResult> setPrivilegedMode(PhonePrivilegedMode mode) => _result('setBackgroundMode', {'mode': mode.name});
+
+  /// An explicit keep choice. Success means saved; status reports actual recovery.
+  Future<PhoneResult> setBackgroundKeep(PhonePrivilegedMode mode, bool enabled) =>
+      _result('setBackgroundKeep', {'mode': mode.name, 'enabled': enabled});
+
+  Future<PhoneResult> prepareRoot() => _result('prepareRoot');
+
+  Future<bool> requestPrivilegedPermission(String provider) =>
+      _bool('requestShizukuPermission', {'provider': provider});
+
   Future<bool> requestShizukuPermission() => _bool('requestShizukuPermission');
 
   /// Posts the notification with a code field for 「使用配对码配对设备」.
@@ -786,7 +977,7 @@ class PhoneChannel {
   /// The in-app fallback: the six-digit code (and port) typed here.
   Future<PhoneResult> adbPair(String code, {int? port}) => _result('adbPair', {'code': code, 'port': port});
 
-  Future<PhoneResult> adbConnect() => _result('adbConnect');
+  Future<PhoneResult> adbConnect({int? port}) => _result('adbConnect', port == null ? null : {'port': port});
 
   Future<PhonePolicies?> getPolicies() async {
     try {

@@ -36,7 +36,7 @@
   "hubSettingsFullAccessBody": "AI won’t ask before running commands or changing files.",
   "hubSettingsStorageTitle": "Let AI access phone files?",
   "hubSettingsStorageAllow": "Allow access",
-  "hubSettingsStorageDenied": "Storage access wasn’t granted. Allow “All files access” for DSH Go in system settings, then try again.",
+  "hubSettingsStorageDenied": "Storage access wasn’t granted. Allow “All files access” for Maomao in system settings, then try again.",
   "hubSettingsRestartRequired": "Takes effect after restarting the engine",
   "hubSettingsRestartNow": "Restart now",
   "hubSettingsInterface": "Interface",
@@ -136,7 +136,14 @@
   "hubInterfaceWebHint": "DSH's own web app",
   "hubInterfaceOpenWeb": "Open the web app",
   "hubInterfacePhoneLayout": "Phone layout",
-  "hubAbout": "About DSH Go",
+  "hubTableTint": "Table tint",
+  "hubTableTintFollow": "Theme",
+  "hubTableTintFill": "Tinted",
+  "hubTableTintNone": "Plain",
+  "hubTableTintFillHint": "Alternating rows, easier to scan long tables",
+  "hubTableTintFollowHint": "Header tint only, body follows the reply",
+  "hubTableTintNoneHint": "Grid lines only, the lightest",
+  "hubAbout": "About Maomao",
   "hubAboutNewVersion": "Update available",
   "hubValueSet": "Set",
   "hubValueOff": "Off",
@@ -163,5 +170,7 @@
   "hubEngineStartup": "Startup",
   "hubThemeLightDark": "Light and dark",
   "hubPermissionPhone": "Phone",
-  "hubPermissionPhoneConfirm": "Phone control confirmation"
+  "hubPermissionPhoneConfirm": "Phone control confirmation",
+  "hubHardwareEnterSends": "Send with hardware Enter",
+  "hubHardwareEnterSendsHint": "When on, Shift+Enter inserts a new line. The on-screen keyboard keeps newlines; Ctrl/⌘+Enter always sends."
 }

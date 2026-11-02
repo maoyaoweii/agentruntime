@@ -101,7 +101,7 @@
       }
     }
   },
-  "plugslotsIssueNeedsApp": "Needs DSH Go {version} or later",
+  "plugslotsIssueNeedsApp": "Needs Maomao {version} or later",
   "@plugslotsIssueNeedsApp": {
     "placeholders": {
       "version": {

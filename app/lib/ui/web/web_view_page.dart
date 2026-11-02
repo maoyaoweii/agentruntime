@@ -16,6 +16,7 @@ import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'web_back.dart';
+import 'web_file_chooser.dart';
 import 'web_navigation.dart';
 import 'web_target.dart';
 import 'web_view_guard.dart';
@@ -529,6 +530,7 @@ class _WebViewPageState extends State<WebViewPage> {
   late WebViewController _controller;
   late final AppLifecycleListener _lifecycle;
   late final WebViewGuard _guard = WebViewGuard(onGone: _onRendererGone);
+  final _files = WebFileChooser();
   int _progress = 0;
   bool _loading = true;
   String? _error;
@@ -564,6 +566,7 @@ class _WebViewPageState extends State<WebViewPage> {
 
   /// A new WebView for [WebViewPage.url].
   void _open() {
+    _files.invalidate();
     final controller = _controller = WebViewController();
     _loading = true;
     _progress = 0;
@@ -576,14 +579,19 @@ class _WebViewPageState extends State<WebViewPage> {
     await Future.wait(
       [
         controller.setJavaScriptMode(JavaScriptMode.unrestricted),
+        _files.attach(controller),
         controller.setNavigationDelegate(
           NavigationDelegate(
             // DSH Web keeps to its own origin; other pages open in the browser.
             onNavigationRequest: widget.dshWeb ? _onDshWebNavigation : null,
-            onPageStarted: (_) => _set(() {
-              _loading = true;
-              _error = null;
-            }),
+            onPageStarted: (_) {
+              if (!mounted || controller != _controller) return;
+              _files.invalidate();
+              _set(() {
+                _loading = true;
+                _error = null;
+              });
+            },
             onProgress: (p) => _set(() => _progress = p),
             onPageFinished: (_) {
               _set(() => _loading = false);
@@ -631,6 +639,7 @@ class _WebViewPageState extends State<WebViewPage> {
 
   void _onRendererGone(bool crashed) {
     if (_gone || !mounted) return;
+    _files.invalidate();
     setState(() {
       _gone = true;
       _loading = false;
@@ -676,27 +685,25 @@ class _WebViewPageState extends State<WebViewPage> {
   bool _targetSent = false;
 
   /// Runs on every load: a session hop reloads the page and the bridge
-  /// picks the rest of the target up from there.
+  /// picks the rest of the target up from there. A load that failed
+  /// finished on the WebView's own error page: the target and the
+  /// [DshWebLink] calls wait for the load that works (重试), rather than
+  /// being spent on a page with no DSH Web in it.
   Future<void> _injectOpenBridge() async {
-    // 捕获当前 WebView：_reopen() 会换掉 _controller，而 await 期间（尤其等
-    // rootBundle 读脚本时）页面可能已经重开；那时若再读字段，脚本会注入到
-    // 新页面上，把「打开某个对话」的目标发错地方。
-    final controller = _controller;
+    if (_error != null) return;
     try {
-      await controller.runJavaScript(await _openBridge());
-      if (!mounted || controller != _controller) return;
+      await _controller.runJavaScript(await _openBridge());
       if (_pendingScripts.isNotEmpty) {
         final scripts = [..._pendingScripts];
         _pendingScripts.clear();
         for (final script in scripts) {
-          await controller.runJavaScript(script);
+          await _controller.runJavaScript(script);
         }
-        if (!mounted || controller != _controller) return;
       }
       final target = widget.openTarget;
       if (_targetSent || target == null || target.isHome) return;
       _targetSent = true;
-      await controller.runJavaScript(target.openScript);
+      await _controller.runJavaScript(target.openScript);
     } catch (_) {
       // Error page without a DOM: the next load injects again.
     }
@@ -707,11 +714,8 @@ class _WebViewPageState extends State<WebViewPage> {
       _source('back', () => rootBundle.loadString('assets/web/dsh_web_back.js', cache: false));
 
   Future<void> _injectBackBridge() async {
-    final controller = _controller;
     try {
-      final source = await _backBridgeSource();
-      if (!mounted || controller != _controller) return;
-      await controller.runJavaScript(source);
+      await _controller.runJavaScript(await _backBridgeSource());
     } catch (_) {
       // Error page without a DOM: the next load injects again.
     }
@@ -722,11 +726,8 @@ class _WebViewPageState extends State<WebViewPage> {
       _source('state', () => rootBundle.loadString('assets/web/dsh_web_state.js', cache: false));
 
   Future<void> _injectStateBridge() async {
-    final controller = _controller;
     try {
-      final source = await _stateBridge();
-      if (!mounted || controller != _controller) return;
-      await controller.runJavaScript(source);
+      await _controller.runJavaScript(await _stateBridge());
     } catch (_) {}
   }
 
@@ -743,10 +744,8 @@ class _WebViewPageState extends State<WebViewPage> {
       _pendingScripts.add(script);
       return;
     }
-    // 与 _inject* 同样的守卫：await 期间 WebView 可能已被换掉。
-    final controller = _controller;
     try {
-      await controller.runJavaScript(script);
+      await _controller.runJavaScript(script);
     } catch (_) {}
   }
 
@@ -832,11 +831,8 @@ class _WebViewPageState extends State<WebViewPage> {
   });
 
   Future<void> _injectPhoneLayout() async {
-    final controller = _controller;
     try {
-      final js = await _phoneLayout();
-      if (!mounted || controller != _controller) return;
-      await controller.runJavaScript(js);
+      await _controller.runJavaScript(await _phoneLayout());
     } catch (_) {
       // A page without a DOM yet (error page): the next load injects again.
     }
@@ -868,6 +864,7 @@ class _WebViewPageState extends State<WebViewPage> {
   void dispose() {
     widget.link?._detach(this);
     _keyboardRest?.cancel();
+    _files.dispose();
     _guard.dispose();
     _lifecycle.dispose();
     super.dispose();

@@ -13,9 +13,10 @@ import 'package:dsh_client/dsh_client.dart';
 
 import '../channel/rpc_client.dart';
 import '../state.dart';
+import '../transport/transport.dart';
 import '../util/bytes.dart';
 
-/// Fixed endpoint allow-list of the Host plugin (ds-harness-remote 0.5.17,
+/// Fixed endpoint allow-list of the Host plugin (ds-harness-remote 0.5.17 to 0.6.0,
 /// `HARNESS_REMOTE_ALLOWLIST` + terminal endpoints). Everything else is
 /// refused by the Host; this client refuses it locally first.
 const Set<String> harnessRemoteAllowlist = {
@@ -143,6 +144,8 @@ class RemoteHostSession {
     this.workspaceTypes,
     this.harnessVersion,
     this.transport = 'relay',
+    this.networkDiagnostics,
+    this.inspectNetwork,
   });
 
   final RemoteRpcClient rpc;
@@ -156,6 +159,11 @@ class RemoteHostSession {
   /// Fresh authorized descriptor for this connection, never a cached listing.
   final String? harnessVersion;
   final String transport;
+
+  /// Initial payload-free snapshot; [inspectNetwork] refreshes native stats
+  /// on demand without sending a health probe or starting a polling timer.
+  final RemoteNetworkDiagnostics? networkDiagnostics;
+  final Future<RemoteNetworkDiagnostics> Function()? inspectNetwork;
 
   bool get supportsTransfer => capabilities.contains('harness.remote.transfer.v1');
   bool get supportsStreamTransfer => capabilities.contains('harness.remote.stream.transfer.v1');
@@ -191,7 +199,7 @@ class RemoteTunnelCarrier extends DshCarrier {
     this.callTimeout = const Duration(seconds: 65),
     this.streamControlTimeout = const Duration(seconds: 15),
     this.healthInterval = const Duration(seconds: 25),
-    this.healthTimeout = const Duration(seconds: 5),
+    this.healthTimeout = const Duration(seconds: 10),
     DshTracer? tracer,
   }) : _open = open,
        _tracer = tracer;
@@ -203,7 +211,10 @@ class RemoteTunnelCarrier extends DshCarrier {
   final Duration callTimeout;
   final Duration streamControlTimeout;
 
-  /// `harness.transport.describe` health probe cadence and deadline.
+  /// `harness.transport.describe` health probe cadence and deadline. The
+  /// periodic probe is skipped while the Host keeps sending: a busy channel is
+  /// a live one, and a probe queued behind a large transfer on a slow link
+  /// could time out and tear down a healthy connection.
   final Duration healthInterval;
   final Duration healthTimeout;
   final DshTracer? _tracer;
@@ -367,7 +378,7 @@ class RemoteTunnelCarrier extends DshCarrier {
   void _startHealth(RemoteHostSession session) {
     _health?.cancel();
     _health = Timer.periodic(healthInterval, (_) {
-      if (_session == session && !session.isClosed) unawaited(probe());
+      if (_session == session && !session.isClosed && session.rpc.sinceInbound >= healthInterval) unawaited(probe());
     });
   }
 

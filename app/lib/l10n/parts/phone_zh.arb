@@ -109,13 +109,11 @@
   "phoneAppRulesPackageHint": "在「设置 → 应用 → 应用信息」里能找到",
   "phoneDndRequiresAndroid": "需要 Android 14 及以上",
   "phoneDndHiddenScreen": "在看不见的屏幕上操作",
-  "phoneDndShizukuReady": "Shizuku · 可以用了",
   "phoneNotReadyYet": "还没准备好",
-  "phoneDndAdbReady": "自连 ADB · 可以用了",
   "phoneActionFailedLater": "没有成功，稍后再试",
   "phoneDndDisabled": "不打扰模式已关闭",
   "phoneDndEnabled": "不打扰模式已启用",
-  "phoneDndShizukuPermissionFailed": "没有拿到授权。可以在 Shizuku 的「应用管理」里给 DSH Go 授权",
+  "phoneDndShizukuPermissionFailed": "没有拿到授权。可以在 Shizuku 的「应用管理」里给 猫猫 授权",
   "phoneDndPairedConnect": "配对成功，点「连接」",
   "phoneDndTitle": "不打扰模式",
   "phoneDndSubtitle": "在看不见的屏幕上操作，不耽误你用手机",
@@ -123,26 +121,48 @@
   "phoneDndRequirements": "使用条件",
   "phoneDndKeepUnlocked": "保持亮屏、解锁。",
   "phoneDndReactivate": "重启手机后重新激活。",
-  "phoneDndKeepDebugging": "连接 Wi-Fi，并保持开发者选项和无线调试开启。",
-  "phoneDndUsingShizuku": "正在使用：Shizuku",
-  "phoneDndUsingAdb": "正在使用：自连 ADB",
+  "phoneDndKeepDebugging": "用 Shizuku 或自连 ADB 时，连接 Wi‑Fi 并保持无线调试开启。",
   "phoneReady": "可以用了",
-  "phoneDndUseShizuku": "用 Shizuku",
   "phoneDndDirectAdb": "自连 ADB",
+  "phoneDndChannels": "通道",
+  "phoneDndShizukuFor": "装了 Shizuku App 的手机",
+  "phoneDndSuiFor": "Magisk 或 KernelSU 装了 Sui 模块",
+  "phoneDndRootFor": "已 root 的手机",
+  "phoneDndAdbFor": "不装别的 App，用无线调试",
+  "phoneDndStateInUse": "使用中",
+  "phoneDndStateNotReady": "未就绪",
+  "phoneDndStateUsable": "可以用",
+  "phoneDndStateNeedsGrant": "待授权",
+  "phoneDndStateNotRunning": "未运行",
+  "phoneDndStateNotInstalled": "未安装",
+  "phoneDndStateNotFound": "未检测到",
+  "phoneDndStateViaSui": "由 Sui 提供",
+  "phoneDndStateWaiting": "等待授权",
+  "phoneDndStateDisconnected": "未连接",
+  "phoneDndStateNotPaired": "未配对",
+  "phoneDndShizukuViaSui": "这台手机的 Shizuku 接口由 Sui 提供，请改用 Sui。",
+  "phoneDndSuiMissing": "没有检测到 Sui。在 Magisk 或 KernelSU 里装好 Sui 模块并重启手机，再回到这里。",
+  "phoneDndSuiRunning": "Sui 接口可用",
+  "phoneDndSuiStopped": "Sui 接口当前不可用。确认 Sui 模块已启用，重启手机后再试。",
+  "phoneDndSuiAllSet": "Sui 这边准备好了。",
+  "phoneDndSuiPermissionFailed": "没能请求 Sui 授权。确认 Sui 模块已启用后再试。",
+  "phoneDndRootWaiting": "正在等待 root 授权，请在 root 管理器的弹窗里选择。",
+  "phoneDndRootConnected": "root 已连接。断开后要回到这里再选一次；打开上面的「保持 root 通道」，猫猫 才会自己再去申请。",
+  "phoneDndRootConnectedKept": "root 已连接。断开后 猫猫 会自己向 root 管理器再次申请。",
+  "phoneDndRootRetry": "重新申请 root 授权",
   "phoneDndInstallShizuku": "先装 Shizuku（免费、开源）。已经在用冰箱、黑阈这类工具的话，多半已经装了。",
   "phoneDndOpenShizukuSite": "打开 Shizuku 官网",
   "phoneDndStartShizuku": "打开 Shizuku，按里面「通过无线调试启动」的说明做一遍（要连 Wi‑Fi）。回到这里会自动刷新。",
-  "phoneDndGrantShizukuHint": "Shizuku 已在运行，还要给 DSH Go 授权。",
-  "phoneDndGrantShizuku": "授权给 DSH Go",
+  "phoneDndGrantShizukuHint": "Shizuku 已在运行，还要给 猫猫 授权。",
+  "phoneDndGrantShizuku": "授权给 猫猫",
   "phoneDndShizukuAllSet": "Shizuku 这边准备好了。",
   "phoneDndShizukuInstalled": "已安装 Shizuku",
   "phoneDndShizukuRunning": "Shizuku 正在运行",
-  "phoneDndShizukuGranted": "已授权给 DSH Go",
+  "phoneDndShizukuGranted": "已授权给 猫猫",
   "phoneDndShizukuCompatibility": "这版 Android 与官方版 Shizuku 存在兼容问题。",
   "phoneDndWirelessDebuggingOn": "无线调试已打开",
   "phoneDndPaired": "已配对",
   "phoneDndConnected": "已连接",
-  "phoneDndPairOnce": "配对一次（不用装别的 App）",
   "phoneDndDeveloperOptionsStep": "打开开发者选项：在「关于手机」里连点「版本号」7 次。小米在「我的设备 → 全部参数与信息」里点「OS 版本」，vivo 点「软件版本号」。",
   "phoneDndWirelessDebuggingStep": "在开发者选项里打开「无线调试」，要连着 Wi‑Fi。开发者选项一般在「系统」或「其他设置」里。",
   "phoneDndStartPairingStep": "回到这里点「开始配对」，DSH 会发一条通知。",
@@ -154,7 +174,6 @@
   "phoneDndConnect": "连接",
   "phoneDndManualEntryHint": "通知里没有输入框时，用「手动填写」",
   "phoneDndXiaomiUsbHint": "打开「USB 调试（安全设置）」需插入 SIM 卡并登录小米账号。",
-  "phoneDndEnable": "启用不打扰模式",
   "phoneDndEnterCodeTitle": "填写配对码",
   "phoneDndCodeLabel": "6 位配对码",
   "phoneDndPortLabel": "端口（可不填）",
@@ -175,7 +194,7 @@
   "phoneEnabled": "已开启",
   "phoneDisabled": "已关闭",
   "phoneOpenAccessibilityFailed": "打不开系统设置，请到「设置 → 无障碍」里找到 DSH",
-  "phoneOpenAppInfoFailed": "打不开应用信息，请到「设置 → 应用」里找到 DSH Go",
+  "phoneOpenAppInfoFailed": "打不开应用信息，请到「设置 → 应用」里找到 猫猫",
   "phoneStopFailed": "没能停止，可以点悬浮条或通知上的「停止」",
   "phoneControlTitle": "手机操控",
   "phoneControlSubtitle": "看屏幕、帮你点按，随时可以停",
@@ -253,9 +272,9 @@
   "phoneRestrictedOpenInfoStep": "回到这里，点「打开应用信息」。",
   "phoneRestrictedBackAccessibility": "回到「无障碍」，打开 DSH。",
   "phoneRestrictedMenuStep": "点右上角的三个点，选「允许受限制的设置」，按提示验证锁屏密码。",
-  "phoneRestrictedTryOverlay": "先去「悬浮窗」设置里点一次 DSH Go 的开关，看到「受限制的设置」提示后点「确定」。做过这一步，下面的选项才会出现。",
-  "phoneRestrictedBackOverlay": "回到「悬浮窗」设置，打开 DSH Go。",
-  "phoneRestrictedHuaweiOverlay": "华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「悬浮窗」设置打开 DSH Go。",
+  "phoneRestrictedTryOverlay": "先去「悬浮窗」设置里点一次 猫猫 的开关，看到「受限制的设置」提示后点「确定」。做过这一步，下面的选项才会出现。",
+  "phoneRestrictedBackOverlay": "回到「悬浮窗」设置，打开 猫猫。",
+  "phoneRestrictedHuaweiOverlay": "华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「悬浮窗」设置打开 猫猫。",
   "phoneRestrictedHuaweiAccessibility": "华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「无障碍」打开 DSH。",
   "phoneRestrictedVivoNote": "不同 OriginOS 版本位置可能不同。右上角没有三个点时，把应用信息页往下翻到底找一找。",
   "phoneRestrictedAdvancedStep": "在「高级设置」里找到「允许受限制的设置」，打开它。",
@@ -404,26 +423,53 @@
       }
     }
   },
-  "phoneDndShizukuStatus": "Shizuku · {reason}",
-  "@phoneDndShizukuStatus": {
-    "placeholders": {
-      "reason": {
-        "type": "String"
-      }
-    }
-  },
-  "phoneDndAdbStatus": "自连 ADB · {reason}",
-  "@phoneDndAdbStatus": {
-    "placeholders": {
-      "reason": {
-        "type": "String"
-      }
-    }
-  },
   "phoneDndBrowserFailed": "打不开浏览器。网址：{url}",
   "@phoneDndBrowserFailed": {
     "placeholders": {
       "url": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneDndChannelReady": "{channel} · 可以用了",
+  "@phoneDndChannelReady": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneDndChannelStatus": "{channel} · {reason}",
+  "@phoneDndChannelStatus": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneDndUsing": "正在使用：{channel}",
+  "@phoneDndUsing": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneDndEnableWith": "{mode, select, shizuku{用 Shizuku 开启} sui{用 Sui 开启} root{用 Root 开启} adb{用自连 ADB 开启} other{启用不打扰模式}}",
+  "@phoneDndEnableWith": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneDndSwitchTo": "{mode, select, shizuku{改用 Shizuku} sui{改用 Sui} root{改用 Root} adb{改用自连 ADB} other{改用这个通道}}",
+  "@phoneDndSwitchTo": {
+    "placeholders": {
+      "mode": {
         "type": "String"
       }
     }
@@ -577,7 +623,7 @@
   "phoneControlEnabledRestarting": "已开启，引擎正在重启",
   "phoneControlDisabledRestarting": "已关闭，引擎正在重启",
   "phoneControlEnabledPending": "已开启，引擎启动后生效",
-  "phoneReturnAfterDone": "完成后返回 DSH Go",
+  "phoneReturnAfterDone": "完成后返回 猫猫",
   "phoneReturnAfterDoneHint": "收起悬浮条，回到对话看结果",
   "phoneFloatingBar": "悬浮条",
   "phoneIdleOpacity": "闲置时不透明度",
@@ -612,5 +658,8 @@
         "type": "String"
       }
     }
-  }
+  },
+  "phoneDndManualConnect": "按端口连接",
+  "phoneDndConnectPortLabel": "连接端口",
+  "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。"
 }

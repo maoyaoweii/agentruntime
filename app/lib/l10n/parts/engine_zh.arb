@@ -32,7 +32,7 @@
   "engineAccountPreparingSignIn": "正在准备登录",
   "engineAccountOpenDeepSeekNext": "马上打开 DeepSeek 登录页",
   "engineAccountFinishInBrowser": "在浏览器中完成登录",
-  "engineAccountReturnToDsh": "登录完成后回到 DSH Go",
+  "engineAccountReturnToDsh": "登录完成后回到 猫猫",
   "engineAccountFinishingSignIn": "正在完成登录",
   "engineAccountSavingSignIn": "正在保存登录信息",
   "engineAccountAwaitingResult": "还没收到登录结果",
@@ -663,6 +663,7 @@
   },
   "engineModelTokenLimits": "Token 上限",
   "engineModelContextLength": "上下文长度",
+  "engineModelContextOverrideHint": "留空使用渠道目录里的值；改大后引擎按新值计算上下文占用与压缩。",
   "engineModelMaxOutput": "最大输出",
   "engineModelDefaultSize": "默认 {size}",
   "@engineModelDefaultSize": {

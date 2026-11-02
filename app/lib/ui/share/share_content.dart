@@ -350,13 +350,7 @@ String shareMarkdown(String markdown, {bool images = false}) {
   }
   final text = out.join('\n').trim();
   if (!images) return text;
-  // 占位符用的是私有区字符（U+E000/U+E001），正常正文里不会出现；但这里仍然守着
-  // 越界和解析失败，宁可少换一张图，也不要让整张分享卡崩掉。
-  return text.replaceAllMapped(RegExp('(\\d+)'), (m) {
-    final index = int.tryParse(m.group(1)!);
-    if (index == null || index < 0 || index >= kept.length) return m.group(0)!;
-    return kept[index];
-  });
+  return text.replaceAllMapped(RegExp('(\\d+)'), (m) => kept[int.parse(m.group(1)!)]);
 }
 
 /// A run of a reply: Markdown text, one fenced code block (drawn by the card

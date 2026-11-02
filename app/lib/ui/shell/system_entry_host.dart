@@ -26,7 +26,9 @@ import '../../l10n/l10n.dart';
 import '../../links/app_links.dart';
 import '../../links/launcher_entries.dart';
 import '../../links/share_intake.dart';
+import '../../state/attachments.dart';
 import '../../state/compose_inbox.dart';
+import '../../state/draft_store.dart';
 import '../../state/hosts_state.dart';
 import '../../state/sessions_state.dart';
 import '../common/discard_guard.dart';
@@ -82,17 +84,24 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
       ref.read(appLinksProvider).add(link.appLink);
       return;
     }
-    final request = await ComposeRequest.fromShare(share);
+    final request = await ComposeRequest.fromShare(share, heldBytes: _heldDraftBytes);
     if (mounted) await _compose(request);
+  }
+
+  /// Bytes the draft this arrival lands in already holds; share loading checks
+  /// the message's whole budget before buffering anything.
+  int get _heldDraftBytes {
+    final draft = ref.read(draftStoreProvider).drafts[ref.read(currentSessionProvider) ?? 'new'];
+    return totalAttachmentBytes(draft?.attachments ?? const []);
   }
 
   Future<void> _onEntry(LauncherEntry entry) async {
     switch (entry) {
-      case NewChatEntry(:final voice):
+      case NewChatEntry(:final voice, :final text):
         // The microphone opens only for an app on screen; the shortcut's
         // intent can arrive a beat before Flutter hears it is resumed.
         if (voice) await _untilResumed();
-        if (mounted) await _compose(ComposeRequest.newChat(voice: voice));
+        if (mounted) await _compose(ComposeRequest(text: text, voice: voice));
       case OpenChatEntry(:final host, :final sessionId):
         if (!await _showChat() || !mounted) return;
         final hosts = ref.read(hostsProvider);
@@ -127,7 +136,7 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
   /// A file opened with the app that no feature registered for.
   Future<bool> _onFile(Uri uri) async {
     if (uri.scheme != 'file') return false;
-    final request = await ComposeRequest.fromFile(uri.toFilePath());
+    final request = await ComposeRequest.fromFile(uri.toFilePath(), heldBytes: _heldDraftBytes);
     if (!mounted) return false;
     await _compose(request);
     return true;

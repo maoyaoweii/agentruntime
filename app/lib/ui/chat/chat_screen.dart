@@ -26,6 +26,7 @@ import '../../state/composer_insert.dart';
 import '../../state/composer_quote.dart';
 import '../../state/connection_state.dart';
 import '../../state/draft_store.dart';
+import '../../state/drawer_view_state.dart';
 import '../../state/engine_control.dart';
 import '../../state/engine_settings_state.dart' show engineSettingsProvider;
 import '../../state/hosts_state.dart' show HostKind, activeHostProvider;
@@ -53,6 +54,7 @@ import '../features/session_export_page.dart';
 import '../onboarding/local_install.dart';
 import '../pets/pet_perch.dart';
 import '../pets/pet_stage.dart';
+import '../plugins/native/composer_strip.dart' show ComposerStripSlot;
 import '../plugins/native/native_composer_bar.dart';
 import '../plugins/native/native_taps.dart' show NativeComposerHost, NativeComposerScope;
 import '../safe_mode/engine_failure_card.dart';
@@ -61,6 +63,7 @@ import '../session/session_detail_page.dart';
 import '../settings/media_settings_page.dart' show MediaSettingsPage, showMediaInstallSheet, showMediaUnavailableSheet;
 import '../settings/settings_widgets.dart' show SettingsTile;
 import '../shell/adaptive/adaptive_layout.dart' show WindowClass;
+import '../shell/drawer/folder_sheets.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../wallpaper/wallpaper_backdrop.dart';
@@ -69,11 +72,12 @@ import '../workspace/workspaces_page.dart';
 import 'balance_widgets.dart';
 import 'chat_header.dart';
 import 'chat_list.dart';
-import 'chat_text_scaler.dart';
 import 'composer.dart';
 import 'composer_toast.dart';
 import 'dock/chat_dock.dart';
+import 'dock/dock_stack.dart';
 import 'empty_state.dart';
+import 'empty_actions.dart';
 import 'media/generate_mode.dart';
 import 'media/generate_sheet.dart';
 import 'media/media_card.dart' show MediaCardActions, mediaItemBytes;
@@ -374,6 +378,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final current = ref.read(currentSessionProvider);
     if (current != null) return current;
     if (_creating != null) return null;
+    final pendingFolder = ref.read(pendingSessionFolderProvider);
     final attempt = Object();
     bool ownsCreation() => identical(_creating, attempt) && isCurrent();
     setState(() {
@@ -393,6 +398,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       // A completed create may outlive its page, client or new-chat draft.
       // Check before any selection, migration, deletion or model side effect.
       if (!ownsCreation() || _draftKey != 'new' || ref.read(currentSessionProvider) != null) return null;
+      if (ref.read(pendingSessionFolderProvider) != pendingFolder) return null;
+      if (pendingFolder != null) {
+        await ref
+            .read(drawerViewProvider.notifier)
+            .moveSessions(
+              [sessionId],
+              pendingFolder,
+              isCurrent: () => ownsCreation() && ref.read(pendingSessionFolderProvider) == pendingFolder,
+            );
+        if (!ownsCreation() || ref.read(pendingSessionFolderProvider) != pendingFolder) return null;
+      }
       final pendingModel = ref.read(pendingModelProvider);
       _draftKey = sessionId;
       _saveDraft();
@@ -456,7 +472,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (slash != null) {
         final (command, line, picked) = slash;
         if (picked) {
-          _pick(command);
+          _pick(command, atCaret: false);
         } else {
           await _runSlash(command, line);
         }
@@ -808,7 +824,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         picked = switch (source) {
           AttachSource.gallery => PickedAttachments(await picker.pickImages(limit: room)),
           AttachSource.camera => PickedAttachments([?await picker.takePhoto()]),
-          AttachSource.files => await picker.pickFiles(limit: room),
+          AttachSource.files => await picker.pickFiles(
+            limit: room,
+            heldBytes: totalAttachmentBytes(_drafts),
+          ),
         };
       } on PlatformException catch (e) {
         if (!ownsDraft()) return;
@@ -848,13 +867,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   void _addDrafts(List<DraftAttachment> picked, {String? problem}) {
     final room = maxAttachments - _drafts.length;
+    var heldBytes = totalAttachmentBytes(_drafts);
     final ok = <DraftAttachment>[];
     for (final a in picked) {
-      final p = attachmentProblem(a);
+      final p = attachmentProblem(a) ?? attachmentBudgetProblem(heldBytes, a);
       if (p != null) {
         problem ??= p;
       } else if (ok.length < room) {
         ok.add(a);
+        heldBytes += a.size;
       } else {
         problem ??= appL10n.chatAttachmentLimit(maxAttachments);
       }
@@ -1054,6 +1075,40 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
   }
 
+  Future<void> _pickNewChatFolder() async {
+    final scope = _draftScope;
+    final host = ref.read(activeHostProvider);
+    bool current() =>
+        mounted &&
+        identical(scope, _draftScope) &&
+        ref.read(activeHostProvider) == host &&
+        ref.read(currentSessionProvider) == null;
+    final view = ref.read(drawerViewProvider);
+    final selected = ref.read(pendingSessionFolderProvider);
+    final pick = await showMoveToFolderSheet(
+      context,
+      folders: view.folders,
+      counts: {for (final f in view.folders) f.id: f.sessionIds.length},
+      currentFolder: selected,
+      anyFiled: selected != null,
+      title: context.l10n.shellFolders,
+      allowCreate: false,
+    );
+    if (pick == null || !current()) return;
+    final String? folderId;
+    switch (pick) {
+      case PickFolder(:final folderId):
+        if (ref.read(drawerViewProvider).byId(folderId) == null) return;
+        ref.read(pendingSessionFolderProvider.notifier).select(folderId);
+        return;
+      case PickNoFolder():
+        folderId = null;
+      case PickNewFolder():
+        return;
+    }
+    ref.read(pendingSessionFolderProvider.notifier).select(folderId);
+  }
+
   // ---------------------------------------------------------------------------
   // 斜杠指令
 
@@ -1082,12 +1137,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// A row picked in the palette: app commands and commands without input run
   /// now; commands that take input go into the composer for the arguments.
-  void _pick(SlashCommand command) {
-    if ((command.kind == SlashCommandKind.host && command.takesInput) || command.kind == SlashCommandKind.skill) {
-      final text = '/${command.name} ';
+  void _pick(SlashCommand command, {bool atCaret = true}) {
+    final value = _input.value;
+    final caret = atCaret && value.selection.isValid ? value.selection.end : value.text.length;
+    final leading = value.text.length - value.text.trimLeft().length;
+    final full = parseSlashInput(value.text);
+    // Completing inside an already known command replaces its whole name.
+    // Otherwise preserve the draft to the right of the cursor (e.g. /|hello).
+    final end = full != null && resolveSlashCommand(_commands, full.token) != null
+        ? leading + 1 + full.token.length
+        : caret;
+    final suffix = value.text.substring(end);
+    if ((command.kind == SlashCommandKind.host && command.takesInput) ||
+        command.kind == SlashCommandKind.skill ||
+        suffix.isNotEmpty) {
+      final prefix = '${value.text.substring(0, leading)}/${command.name}';
+      final separator = suffix.isEmpty || !RegExp(r'^\s').hasMatch(suffix) ? ' ' : '';
+      final text = '$prefix$separator$suffix';
       _input.value = TextEditingValue(
         text: text,
-        selection: TextSelection.collapsed(offset: text.length),
+        selection: TextSelection.collapsed(offset: (prefix.length + 1).clamp(0, text.length)),
       );
       _focus.requestFocus();
       return;
@@ -1286,6 +1355,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             sessionsProvider.select((async) => async.value?.where((s) => s.sessionId == sessionId).firstOrNull?.title),
           );
     final pendingModel = ref.watch(pendingModelProvider);
+    final newFolder = sessionId == null
+        ? ref.watch(drawerViewProvider).byId(ref.watch(pendingSessionFolderProvider))
+        : null;
+    final hasFolders = sessionId == null && ref.watch(drawerViewProvider).folders.isNotEmpty;
     final commands = ref.watch(slashCommandsProvider(sessionId));
     final contextFraction = sessionId == null
         ? null
@@ -1388,6 +1461,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     // messages stay in sight above the composer.
     final typing =
         MediaQuery.sizeOf(context).height < WindowClass.compactHeight && MediaQuery.viewInsetsOf(context).bottom > 0;
+    // 「自动允许中」/「完全权限」 ride on the bar right above the composer, not a
+    // row of their own: beside the activity strip while a reply generates, at
+    // the start of the capsule row otherwise. Their own row only where neither
+    // shows (read only; a phone on its side typing folds both away).
+    final running = chat?.running ?? false;
+    final pillsBesideStrip = sessionId != null && running && !typing;
+    final pillsInCapsules = !readOnly && !running && !typing;
+    final composerPills = _composerPills(
+      sessionId,
+      autoApprove: chat?.autoApprove ?? false,
+      generate: readOnly ? null : generate,
+      risk: !pillsBesideStrip,
+    );
     final headerHeight = typing ? MediaQuery.paddingOf(context).top + AppSpace.sm : ChatHeader.heightOf(context);
 
     Widget backdrop(Widget child) => widget.backdrop ? WallpaperBackdrop(child: child) : child;
@@ -1433,6 +1519,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                           ? _reconnect
                                           : null,
                                       onSuggestion: _onSuggestion,
+                                      folderPicker: hasFolders
+                                          ? QuietChip(
+                                              icon: AppIcons.folder,
+                                              label: newFolder == null
+                                                  ? context.l10n.shellFolders
+                                                  : context.l10n.shellFolderLabel(newFolder.name),
+                                              trailing: AppIcons.expand,
+                                              onTap: _pickNewChatFolder,
+                                            )
+                                          : null,
                                       workspace: workspace == null ? null : workspaceTitle(workspace),
                                       onWorkspace: () => showWorkspaceSheet(
                                         context,
@@ -1521,7 +1617,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             // The `@` word at the caret wins over a "/" line.
                             final live = connected && !readOnly;
                             final mention = live && _mentions.isOpen;
-                            final content = live && !mention ? PaletteContent.of(commands, _input.text) : null;
+                            final content = live && !mention
+                                ? PaletteContent.of(
+                                    commands,
+                                    _input.text,
+                                    caret: _input.selection.isCollapsed ? _input.selection.extentOffset : -1,
+                                  )
+                                : null;
                             // The pet steps aside while a panel is up.
                             return PetCover(
                               active: mention || content != null,
@@ -1642,11 +1744,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                   duration: AppMotion.of(context, AppMotion.standard),
                                   curve: AppMotion.std,
                                   alignment: Alignment.bottomLeft,
-                                  child: switch (_composerPill(
-                                    sessionId,
-                                    autoApprove: chat?.autoApprove ?? false,
-                                    generate: readOnly ? null : generate,
-                                  )) {
+                                  child: switch (pillsInCapsules ? null : composerPills) {
                                     final pill? => Padding(
                                       padding: const EdgeInsets.only(bottom: 8),
                                       child: Align(
@@ -1657,39 +1755,54 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     null => const SizedBox(width: double.infinity),
                                   },
                                 ),
-                                // Todo and goal bars (official input dock),
-                                // above the strip; zero high when empty. They
-                                // fold away while a phone on its side types.
-                                if (sessionId != null)
-                                  _DockAside(
-                                    aside: typing,
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                                      children: [
-                                        ChatDock(sessionId: sessionId),
-                                        ActivityStripSlot(
-                                          sessionId: sessionId,
-                                          onTap: () => _openRunningTrajectory(sessionId),
-                                          // The todo bar above already shows it.
-                                          todoProgress: false,
-                                        ),
+                                // The status bars as one deck: the todo and
+                                // goal bars (official input dock), the
+                                // activity strip, a plugin's status line;
+                                // each zero high when empty. Folded, they take
+                                // one row (dock_stack.dart). They fold away
+                                // while a phone on its side types.
+                                _DockAside(
+                                  aside: typing,
+                                  child: BackdropGroup(
+                                    child: DockStack(
+                                      cards: [
+                                        if (sessionId != null) ...[
+                                          TodoDockSlot(sessionId: sessionId),
+                                          GoalDockSlot(sessionId: sessionId),
+                                          ActivityStripSlot(
+                                            sessionId: sessionId,
+                                            onTap: () => _openRunningTrajectory(sessionId),
+                                            // The todo bar shows it, unless it is folded behind the strip.
+                                            todoProgress: ref.watch(dockFoldedProvider),
+                                          ),
+                                        ],
+                                        // It gives the activity strip its place while a reply generates.
+                                        if (!readOnly) ComposerStripSlot(sessionId: sessionId, visible: !running),
                                       ],
+                                      accessory: pillsBesideStrip
+                                          ? _stripRisk(sessionId, autoApprove: chat?.autoApprove ?? false)
+                                          : null,
                                     ),
                                   ),
-                                // Plugins' status line, then the capsules
-                                // (ui.json's and plugins'): they give the
-                                // activity strip its place while a reply
-                                // generates; nothing at all without any.
+                                ),
+                                // The capsules (ui.json's and plugins'), led
+                                // by the chat's pills; they step aside while a
+                                // reply generates; nothing at all without any.
                                 if (!readOnly)
                                   _DockAside(
                                     aside: typing,
-                                    child: NativeComposerBar(sessionId: sessionId, visible: !(chat?.running ?? false)),
+                                    child: NativeComposerBar(
+                                      sessionId: sessionId,
+                                      visible: !running,
+                                      leading: pillsInCapsules ? composerPills : null,
+                                      strip: false,
+                                    ),
                                   ),
                                 if (readOnly)
                                   const ReadOnlyBar()
                                 else
                                   Composer(
+                                    hardwareEnterSends: ref.watch(settingsProvider.select((s) => s.hardwareEnterSends)),
                                     controller: _input,
                                     // The page's context: Scaffold drops the keyboard inset below.
                                     maxLines: Composer.linesFor(context),
@@ -1767,13 +1880,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// What sits on the composer's top-left edge: 「自动允许中 ×」 while this
   /// client allows everything, else 「⚠ 完全权限 ›」 for a conversation looser
-  /// than 工作区内修改; nothing otherwise.
-  Widget? _composerPill(String? sessionId, {required bool autoApprove, GenerateParams? generate}) {
+  /// than 工作区内修改 (unless [risk] is false: they are beside the activity
+  /// strip), then the generation mode's capsule; nothing otherwise.
+  Widget? _composerPills(String? sessionId, {required bool autoApprove, GenerateParams? generate, bool risk = true}) {
     final capsule = generate == null
         ? null
         : GenerateCapsule(params: generate, onTap: () => _openGenerateSheet(generate), onExit: _exitGenerate);
     Widget? pill;
-    if (sessionId != null && autoApprove) {
+    if (!risk) {
+      // Beside the activity strip ([_stripRisk]).
+    } else if (sessionId != null && autoApprove) {
       pill = AutoApprovePill(onDisable: () => ref.read(chatProvider(sessionId).notifier).setAutoApprove(false));
     } else if (sessionId != null) {
       final risky = ref.watch(sessionModesProvider(sessionId).select((m) => m.risky ? m.preset : null));
@@ -1795,6 +1911,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         const SizedBox(width: GenerateCapsuleMetrics.gap),
         Flexible(child: capsule),
       ],
+    );
+  }
+
+  /// 「自动允许中」/「完全权限」 beside the activity strip while a reply generates.
+  Widget? _stripRisk(String sessionId, {required bool autoApprove}) {
+    if (autoApprove) {
+      return StripRiskChip.autoApprove(
+        context,
+        onDisable: () => ref.read(chatProvider(sessionId).notifier).setAutoApprove(false),
+      );
+    }
+    final risky = ref.watch(sessionModesProvider(sessionId).select((m) => m.risky ? m.preset : null));
+    if (risky == null) return null;
+    return StripRiskChip.permission(
+      context,
+      preset: risky,
+      onTap: () => unawaited(showPermissionSheet(context, sessionId)),
     );
   }
 
@@ -2070,8 +2203,28 @@ class _ChatTextScale extends ConsumerWidget {
     if (factor == 1.0) return child;
     final media = MediaQuery.of(context);
     return MediaQuery(
-      data: media.copyWith(textScaler: ChatTextScaler(media.textScaler, factor)),
+      data: media.copyWith(textScaler: _ChatScaler(media.textScaler, factor)),
       child: child,
     );
   }
+}
+
+/// The chat size on top of the system's: Android 14 scales large text less
+/// than small, and that curve is kept.
+class _ChatScaler extends TextScaler {
+  const _ChatScaler(this.base, this.factor);
+  final TextScaler base;
+  final double factor;
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * factor;
+
+  @override
+  double get textScaleFactor => scale(1);
+
+  @override
+  bool operator ==(Object other) => other is _ChatScaler && other.base == base && other.factor == factor;
+
+  @override
+  int get hashCode => Object.hash(base, factor);
 }

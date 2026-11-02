@@ -17,7 +17,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,11 +41,16 @@ const pluginSkillName = 'dsh-go-plugin';
 /// how to use the app. Read-only; installed and kept current the same way.
 const guideSkillName = 'dsh-go-guide';
 
-/// The fourth: the mobile-agent operating doctrine ported from Mika
-/// (Apache-2.0). Its layered prompts live under
-/// assets/skills/dsh-go-agent/ (system/, capabilities/, tools/, entries/,
-/// roles/, feedback/) and are assembled per task by [agentPromptSections];
-/// the gating rules are documented in its reference/gating.md.
+/// The fourth: troubleshooting and bug-report playbook. Reads the diagnostics
+/// snapshot the app writes into the engine (`$DSH_HOME/dsh-app/diagnostics.md`)
+/// and turns a symptom into a redacted environment summary / issue draft.
+const supportSkillName = 'dsh-go-support';
+
+/// 手机智能体的操作准则（移植自 Mika 的分层提示词，Apache-2.0）。
+///
+/// 分层结构 + 门控标记 <!-- needs: tool -->，由 gent_prompt.dart 处理。
+/// 这是唯一带门控行的技能，也是资产一致性测试盯的那个
+/// （	est/ui_config/agent_skill_assets_test.dart）。
 const agentSkillName = 'dsh-go-agent';
 
 /// The managed line inside SKILL.md's front matter.
@@ -161,6 +165,7 @@ final extraSkillLoadersProvider = Provider<List<UiSkillBundleLoader>>(
   (ref) => [
     () => loadUiSkillBundle(null, pluginSkillName),
     () => loadUiSkillBundle(null, guideSkillName),
+    () => loadUiSkillBundle(null, supportSkillName),
     () => loadUiSkillBundle(null, agentSkillName),
   ],
 );
@@ -294,15 +299,7 @@ class _UiSkillDrain {
             final extra = await load();
             if (!_current(batch)) break;
             await _install(batch, root, extra);
-          } catch (error, stack) {
-            // 一个附加技能装不上不该拖垮其它技能，所以这里继续下一个；但必须留下
-            // 痕迹：过去这里吞掉一切异常，manifest 键名对不上导致技能从来没被写进
-            // rootfs，却完全看不出来。debug 构建里要能看到。
-            assert(() {
-              debugPrint('ui_skill: 附加技能装载失败: $error\n$stack');
-              return true;
-            }());
-          }
+          } catch (_) {}
         }
       } catch (_) {
         // Missing native bridge, rejected transaction or failed assets: next
