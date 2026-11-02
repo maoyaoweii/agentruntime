@@ -165,7 +165,7 @@ dependencies {
 // 所以必须走 variant API。
 androidComponents {
     onVariants { variant ->
-        val keep = if (variant.name.startsWith("arm64")) "arm64-v8a" else "x86_64"
+        val keep = if (variant.name.contains("arm64", ignoreCase = true)) "arm64-v8a" else "x86_64"
         val drop = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64").filter { it != keep }
         variant.packaging.jniLibs.excludes.addAll(drop.map { "lib/$it/**" })
     }
