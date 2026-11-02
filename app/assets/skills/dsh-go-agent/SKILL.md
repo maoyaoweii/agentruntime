@@ -51,7 +51,7 @@ Mika 的提示词不是「一堆说明」，而是**用途完全不同的几类�
 ## 本机适配的关键改动
 
 原版 Mika 面向 `phone_observe` / `phone_tap(@eN)` / 0–999 归一化网格；
-**dsh-go 实际只有 13 个固定 `mcp__phone__*` 工具，坐标是真实像素**。
+**dsh-go 实际只有 14 个固定 `mcp__phone__*` 工具，坐标是真实像素**。
 `capabilities/phone.md` 已按本机重写，原版留在 `reference/mika-phone-original.md`。
 
 同理已移出主提示词层的：`web.md`（本机无 `web_*` 工具）、`batch.md`（无 `do_steps`）、
@@ -59,7 +59,7 @@ Mika 的提示词不是「一堆说明」，而是**用途完全不同的几类�
 
 ## 为什么工具集是固定的
 
-`PhoneToolCatalog.kt` 明确保持 13 个工具不随权限增减：工具名、描述、schema 每轮都进
+`PhoneToolCatalog.kt` 明确保持 14 个工具不随权限增减：工具名、描述、schema 每轮都进
 请求，任何变化都会让 DeepSeek 的 KV cache 从第一个变化的 token 起失效。所以本技能
 **不会**动态增删工具，只做提示词层的裁剪。
 

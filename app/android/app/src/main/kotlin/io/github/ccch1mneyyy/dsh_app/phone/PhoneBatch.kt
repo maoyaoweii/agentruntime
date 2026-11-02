@@ -89,12 +89,80 @@ object PhoneBatch {
         return Parsed.Go(steps)
     }
 
-    /** 屏幕指纹：用来判断「这一步之后页面有没有变」。 */
+    /**
+     * 把后续步骤里过期的屏幕编号换成最新的。
+     *
+     * 模型下发 batch 时只见过批量开始那一屏（比如 `s7`）。每步执行后快照号会推进
+     * 到 `s8`、`s9`，后续步骤若还带着 `s7`，driver 的 `snap.id != screenId` 会
+     * 直接判过期。这里把 [stale] 里的旧编号替换成 [fresh]。
+     *
+     * 只在编号确实过期时改；模型自己写对了就不动。
+     */
+    fun advanceScreen(
+        args: Map<String, Any?>,
+        stale: Set<String>,
+        fresh: String?,
+    ): Map<String, Any?> {
+        if (fresh == null) return args
+        val key = when {
+            args.containsKey("screen") -> "screen"
+            args.containsKey("observation") -> "observation"
+            else -> return args
+        }
+        val given = args[key] as? String ?: return args
+        if (given == fresh || given !in stale) return args
+        return args + (key to fresh)
+    }
+
+    /**
+     * 屏幕指纹：用来判断「这一步之后页面有没有变」。
+     *
+     * 只取可比较的部分：[ScreenSnapshot.text] 的首行是「屏幕 s7 · App · 标题」这种
+     * 带快照号的抬头，每步都会变；也有可能是 ScreenDigest 的增量缩写
+     * （「（与 s7 相同，编号不变）」「（只列变化：…）」）。这些都不该算进指纹，
+     * 否则「页面没变」永远判不出来。
+     */
     fun fingerprint(screen: ScreenSnapshot?): String? {
         screen ?: return null
         val app = screen.packageName ?: return null
-        // 正文可能很长，取前 4000 字符够了：页面结构变化会体现在前面。
-        return app + "\u0000" + screen.text.take(4000)
+        val lines = screen.text.lines()
+        val body = lines
+            // 首行是「屏幕 s7 · …」时才跳过；万一上游只给了正文，别把正文丢了。
+            .drop(if (isHeadline(lines.firstOrNull())) 1 else 0)
+            // 整屏没变时 ScreenDigest 只回一行「（与 s7 相同，编号不变）」。
+            // 这样的内容要当作「和上一屏一样」，而不是「空屏」——否则拿空字符串
+            // 去比，反而把它判成变化了。
+            .filterNot { isDigestMarker(it) }
+            .joinToString("\n")
+            .trim()
+        return app + "\u0000" + body.take(4000)
+    }
+
+    /**
+     * 整屏没变（只有增量说明行）时，指纹就是「空正文」。
+     *
+     * `afterStep` 用它区分两种空：真·空内容 vs 明确表示「与上一屏相同」。
+     * 后者配上 `before` 的空正文就应当判成「没变」。
+     */
+    private fun isDigestOnly(screen: ScreenSnapshot?): Boolean {
+        screen ?: return false
+        val lines = screen.text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val body = if (isHeadline(lines.firstOrNull())) lines.drop(1) else lines
+        return body.isNotEmpty() && body.all { isDigestMarker(it) }
+    }
+
+    /** 首行是不是「屏幕 sN · …」那种带快照号的抬头。 */
+    private fun isHeadline(line: String?): Boolean {
+        line ?: return false
+        // l10n:keep agent screen format
+        return line.trimStart().startsWith("屏幕 ")
+    }
+
+    /** ScreenDigest 的增量说明行：它们描述的是「和上一屏的关系」，不是内容本身。 */
+    private fun isDigestMarker(line: String): Boolean {
+        val t = line.trim()
+        // l10n:keep agent screen format
+        return t.startsWith("（与 ") || t.startsWith("（只列变化") || t.startsWith("（其余 ")
     }
 
     /** 步间校验的结论。 */
@@ -113,12 +181,16 @@ object PhoneBatch {
      * @param after 执行后的屏幕（null 表示没拿到）
      * @param allowSameScreen 这一步是否允许屏幕完全不变（输入文字时常常不变）
      * @param appBefore 执行前的 App 标签，用来发现「跳去别的 App 了」
+     * @param nextTool 下一步要做什么；下一步是 type 时，本步 tap 只是聚焦输入框，
+     *   屏幕元素不变属于正常
      */
     fun afterStep(
         before: ScreenSnapshot?,
         after: ScreenSnapshot?,
         allowSameScreen: Boolean,
         appBefore: String?,
+        nextTool: String? = null,
+        ranTool: String? = null,
     ): Verdict {
         if (after == null) {
             // l10n:keep agent tool result
@@ -135,8 +207,16 @@ object PhoneBatch {
             return Verdict.Stop("App 从「$appBefore」跳到了「$app」，批量已停。确认这是不是你要去的地方。")
         }
 
-        val same = fingerprint(before) != null && fingerprint(before) == fingerprint(after)
-        if (same && !allowSameScreen) {
+        val beforePrint = fingerprint(before)
+        val same = beforePrint != null && beforePrint == fingerprint(after)
+        // after 只回了「（与 s7 相同，编号不变）」时，指纹正文是空的；这种要按
+        // 「明确没变」处理，而不是「空内容所以算变了」。
+        val digestSaysSame = isDigestOnly(after)
+        // 「点输入框聚焦 → 输入」是 batch 最核心的用法：点完只是聚焦、弹键盘，
+        // 元素列表常常不变。下一步是 type 时这一屏不变属于正常，不能停。
+        val focusesForTyping = nextTool == PhoneToolCatalog.TYPE &&
+            (ranTool == PhoneToolCatalog.TAP || ranTool == PhoneToolCatalog.TAP_XY)
+        if ((same || digestSaysSame) && !allowSameScreen && !focusesForTyping) {
             // l10n:keep agent tool result
             return Verdict.Stop(
                 "这一步点了之后页面完全没变，后面几步很可能点空。批量已停：" +

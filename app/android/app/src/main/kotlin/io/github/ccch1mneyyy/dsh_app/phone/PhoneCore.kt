@@ -182,13 +182,26 @@ class PhoneCore(
         var current: ScreenSnapshot? = null
         var last: Out? = null
 
+        // 模型下发 batch 时只知道批量开始那一屏的编号；每步之后快照号会推进，
+        // 所以后续步骤里还写着旧编号的 screen / observation 要改写成最新的那个，
+        // 否则 driver.target() 的 snap.id != screenId 会直接把这一步判成过期。
+        val startScreen = steps.firstNotNullOfOrNull { it.args["screen"] as? String }
+            ?: steps.firstNotNullOfOrNull { it.args["observation"] as? String }
+
         for ((index, step) in steps.withIndex()) {
             val n = index + 1
-            // 每步之前重新看一眼前面的结果，作为步间对比的基准。
-            val before = current ?: screen(Args(emptyMap())).screen
+            // 第 1 步之前不要额外观察：那会自增 counter，把模型传来的 s7 冲成 s8，
+            // 第 1 步反而必然报「屏幕已过期」。
+            val before = current
             val appBefore = before?.appLabel ?: before?.packageName
 
-            val out = execute(step.tool, Args(step.args), scope)
+            val args = if (index == 0) {
+                step.args
+            } else {
+                PhoneBatch.advanceScreen(step.args, stale = setOfNotNull(startScreen, before?.id), fresh = current?.id)
+            }
+
+            val out = execute(step.tool, Args(args), scope)
             last = out
             done.add("${n}. ${describeStep(step)}")
 
@@ -217,6 +230,10 @@ class PhoneCore(
                 after = current,
                 allowSameScreen = PhoneBatch.allowsSameScreen(step.tool),
                 appBefore = appBefore,
+                // 「点输入框聚焦 → 输入」是 batch 最核心的用法：点完只是聚焦、
+                // 元素列表不变，这时不能判成「点了没反应」。
+                nextTool = steps.getOrNull(index + 1)?.tool,
+                ranTool = step.tool,
             )
             if (verdict is PhoneBatch.Verdict.Stop) {
                 return Out(

@@ -114,7 +114,13 @@ void main() {
     runtime.setPhase(RuntimePhase.running);
     await until(() => c.read(uiSkillAutoInstallProvider) != null);
     await c.read(uiSkillAutoInstallProvider.notifier).running;
-    for (final name in [uiSkillName, pluginSkillName, guideSkillName]) {
+    for (final name in [
+      uiSkillName,
+      pluginSkillName,
+      guideSkillName,
+      supportSkillName,
+      agentSkillName,
+    ]) {
       expect(File('${root.path}/root/.dsh/skills/$name/SKILL.md').existsSync(), isTrue, reason: name);
     }
     for (final MapEntry(key: path, value: text) in guide.files.entries) {

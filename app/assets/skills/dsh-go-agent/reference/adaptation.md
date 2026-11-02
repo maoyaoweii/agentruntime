@@ -34,7 +34,7 @@
 上游 Mika 面向 `phone_observe` / `phone_tap(@eN)` / `web_*` / `do_steps` 等 65+ 个工具，
 坐标系是 0–999 归一化网格。
 
-dsh-go 实际只有 **13 个固定的 `mcp__phone__*`**（`PhoneToolCatalog.kt`），
+dsh-go 实际只有 **14 个固定的 `mcp__phone__*`**（`PhoneToolCatalog.kt`），
 坐标是**真实像素**，元素引用是 `screen` 代号 + 整数 `id`。
 
 所以做了这些替换：

@@ -221,4 +221,100 @@ class PhoneBatchTest {
         assertTrue(!PhoneBatch.allowsSameScreen(PhoneToolCatalog.TAP))
         assertTrue(!PhoneBatch.allowsSameScreen(PhoneToolCatalog.TAP_XY))
     }
+
+    // ── advanceScreen ─────────────────────────────────────────────────────────
+    // 模型下发 batch 时只见过开头那一屏；每步之后快照号会推进，
+    // 后续步骤里还写旧编号就会被 driver 判成过期。
+
+    @Test
+    fun `advances a stale screen id to the fresh one`() {
+        val args = mapOf("screen" to "s7", "id" to 3)
+        val out = PhoneBatch.advanceScreen(args, stale = setOf("s7"), fresh = "s8")
+        assertEquals("s8", out["screen"])
+        assertEquals(3, out["id"])
+    }
+
+    @Test
+    fun `advances observation for tap_xy`() {
+        val args = mapOf("observation" to "s7", "x" to 10, "y" to 20)
+        val out = PhoneBatch.advanceScreen(args, stale = setOf("s7"), fresh = "s9")
+        assertEquals("s9", out["observation"])
+    }
+
+    @Test
+    fun `leaves a screen id the model got right`() {
+        val args = mapOf("screen" to "s9", "id" to 1)
+        val out = PhoneBatch.advanceScreen(args, stale = setOf("s7"), fresh = "s9")
+        assertEquals("s9", out["screen"])
+    }
+
+    @Test
+    fun `leaves args without a screen id alone`() {
+        val args = mapOf("direction" to "down")
+        val out = PhoneBatch.advanceScreen(args, stale = setOf("s7"), fresh = "s8")
+        assertEquals(args, out)
+    }
+
+    @Test
+    fun `does not rewrite when there is no fresh id`() {
+        val args = mapOf("screen" to "s7", "id" to 3)
+        val out = PhoneBatch.advanceScreen(args, stale = setOf("s7"), fresh = null)
+        assertEquals("s7", out["screen"])
+    }
+
+    // ── fingerprint 与快照号 ──────────────────────────────────────────────────
+    // 抬头里的快照号每步都变；算进指纹会让「页面没变」永远判不出来。
+
+    @Test
+    fun `headline snapshot id does not change the fingerprint`() {
+        val a = PhoneBatch.fingerprint(snap(text = "屏幕 s7 · 示例 · 共 2 项\n[1] 按钮 确定"))
+        val b = PhoneBatch.fingerprint(snap(text = "屏幕 s8 · 示例 · 共 2 项\n[1] 按钮 确定"))
+        assertNotNull(a)
+        assertEquals(a, b)
+    }
+
+    @Test
+    fun `both digest markers fingerprint the same`() {
+        // 摘要行本身不含元素内容，两个摘要之间应当彼此相等；
+        // 「摘要 vs 完整屏」由 afterStep 的 isDigestOnly 分支处理，不在这里比。
+        val a = PhoneBatch.fingerprint(snap(text = "屏幕 s7 · 示例\n（与 s6 相同，编号不变）"))
+        val b = PhoneBatch.fingerprint(snap(text = "屏幕 s8 · 示例\n（与 s7 相同，编号不变）"))
+        assertNotNull(a)
+        assertEquals(a, b)
+    }
+
+    @Test
+    fun `body difference still changes the fingerprint`() {
+        val a = PhoneBatch.fingerprint(snap(text = "屏幕 s7 · 示例\n[1] 按钮 确定"))
+        val b = PhoneBatch.fingerprint(snap(text = "屏幕 s7 · 示例\n[1] 按钮 取消"))
+        assertTrue(a != b)
+    }
+
+    // ── 聚焦后输入不被误停 ────────────────────────────────────────────────────
+
+    @Test
+    fun `tap before type may leave the screen unchanged`() {
+        val verdict = PhoneBatch.afterStep(
+            before = snap(text = "屏幕 s7 · 示例\n[1] 输入框 搜索"),
+            after = snap(text = "屏幕 s8 · 示例\n（与 s7 相同，编号不变）"),
+            allowSameScreen = false,
+            appBefore = "示例",
+            nextTool = PhoneToolCatalog.TYPE,
+            ranTool = PhoneToolCatalog.TAP,
+        )
+        assertTrue(verdict is PhoneBatch.Verdict.Continue)
+    }
+
+    @Test
+    fun `tap not followed by type still stops when nothing changed`() {
+        val verdict = PhoneBatch.afterStep(
+            before = snap(text = "屏幕 s7 · 示例\n[1] 按钮 确定"),
+            after = snap(text = "屏幕 s8 · 示例\n（与 s7 相同，编号不变）"),
+            allowSameScreen = false,
+            appBefore = "示例",
+            nextTool = PhoneToolCatalog.SCROLL,
+            ranTool = PhoneToolCatalog.TAP,
+        )
+        assertTrue(verdict is PhoneBatch.Verdict.Stop)
+    }
 }

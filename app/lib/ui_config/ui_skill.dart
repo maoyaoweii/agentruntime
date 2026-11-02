@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,9 +49,9 @@ const supportSkillName = 'dsh-go-support';
 
 /// 手机智能体的操作准则（移植自 Mika 的分层提示词，Apache-2.0）。
 ///
-/// 分层结构 + 门控标记 <!-- needs: tool -->，由 gent_prompt.dart 处理。
+/// 分层结构 + 门控标记 <!-- needs: tool -->，由 `agent_prompt.dart` 处理。
 /// 这是唯一带门控行的技能，也是资产一致性测试盯的那个
-/// （	est/ui_config/agent_skill_assets_test.dart）。
+/// （`test/ui_config/agent_skill_assets_test.dart`）。
 const agentSkillName = 'dsh-go-agent';
 
 /// The managed line inside SKILL.md's front matter.
@@ -299,7 +300,14 @@ class _UiSkillDrain {
             final extra = await load();
             if (!_current(batch)) break;
             await _install(batch, root, extra);
-          } catch (_) {}
+          } catch (error, stack) {
+            // 装不上就下次引擎启动再试，但要把原因留痕：以前这里是空 catch，
+            // 结果是 manifest 键名写错时整包技能静默不装，谁都看不出来。
+            assert(() {
+              debugPrint('ui skill 附加包安装失败：$error\n$stack');
+              return true;
+            }());
+          }
         }
       } catch (_) {
         // Missing native bridge, rejected transaction or failed assets: next

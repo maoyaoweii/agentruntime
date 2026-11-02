@@ -1,10 +1,58 @@
-- The result of a screen action already includes the screen after the action
-  (`screen`: only elements that appeared, disappeared or changed are listed;
-  anything not listed is unchanged). You do not need to observe after every
-  action. If the target is missing or ambiguous in the elements, request a
-  screenshot or visual location. Observe again when the screen is still
-  changing.
-- On phone, a full screen includes `tree` grouped by window. A differential
-  result includes `treeChanges`: `updated` gives a node path and its new
-  properties (or a full subtree when added), and `removed` gives paths that
-  disappeared. Paths follow window ID and child indexes, such as `w7/0/2`.
+# 屏幕结果怎么读
+
+每次动作之后都会带回一屏文本。格式固定，照这个读，不要套 Mika 的 JSON 结构。
+
+## 长什么样
+
+```text
+屏幕 s7 · 高德地图 · 竖屏 · 键盘收起 · 共 12 项
+顶部
+  [1] 按钮 返回
+  [2] 输入框 "瑞幸咖啡" 已聚焦
+列表 [4] 可下滑
+  [5] 瑞幸咖啡(科技园店) · 4.6分 · 320m · 营业中
+      [6] 按钮 路线   [7] 按钮 电话
+底部
+  [11] 标签 综合排序 · 已选   [12] 标签 距离优先
+```
+
+- **第一行是抬头**：快照号（`s7`）、应用名、横竖屏、键盘状态、元素总数。
+- **`[n]` 是元素编号**，按阅读顺序发。`tap` / `type` 就传 `screen: "s7"` + `id: n`。
+- **分区**只有 `顶部` / `中部` / `底部` 三个，按位置切，不是 Mika 的 `w7/0/2` 节点路径。
+- **`⚠`** 表示这个元素会触发安全确认；**`+`** 表示相对上一屏是新增的。
+- 密码框内容永远不显示。
+
+## 增量返回
+
+页面没怎么变时，不会重发整屏：
+
+```text
+（与 s7 相同，编号不变）
+```
+
+```text
+（只列变化：其余 9 项与 s7 相同，编号不变）
+```
+
+看到这种就是**没列出来的部分照旧**，编号也不变。别以为读漏了，也别因为这行就去重新 `screen` 一次——那会浪费一轮，还会把快照号推进。
+
+## 快照号会过期
+
+每观察一次，编号往后走一位（`s7` → `s8`）。拿旧编号去 `tap`，会得到「屏幕已经过期」。
+
+所以：
+
+- 动作之后用新返回的抬头里的编号，不要沿用上一次的；
+- 不确定当前是哪一屏，先 `screen` 看一眼再动；
+- `batch` 里只有第 1 步需要写 `screen`，后面可以不写，程序会自动用最新的编号。
+
+## 页面没变不等于没生效
+
+点搜索框、聚焦输入框这类动作，元素列表经常完全不动，但焦点已经过去了。
+
+返回里如果出现「界面没有明显变化」，先判断这一步本身是不是「准备动作」：
+
+- 是准备动作（聚焦、弹键盘）→ 接着做下一步（比如 `type`），别重试；
+- 是实质动作（点了某个按钮应该跳页）→ 那才是真没生效，换 `tap_xy` 或换条路。
+
+读不到内容的页面（敏感视图）会返回「无法验证结果」。这种情况**不要**下结论说成功或失败，`handoff` 给用户看。
