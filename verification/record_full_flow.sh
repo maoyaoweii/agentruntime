@@ -55,12 +55,20 @@ run_task () {
   adb shell run-as "$PKG" rm -f files/last_result.json >/dev/null 2>&1
   adb shell am start -n "$PKG/com.agentruntime.ui.TaskExecActivity" \
       --ez auto_confirm true --ez allow_replan false --ez behind_after_launch true \
+      --es cloud_base_url "http://10.0.2.2:8900/v2/chat/completions" \
+      --es cloud_api_key "ak-c7a902c8d1f92069400826911dc643f3" \
+      --es cloud_model "spark-x2.6" \
       --es task_json_b64 "$(b64 "$js")" >/dev/null 2>&1
   show_result "$name" "$(wait_result 200)"
 }
 
 echo '=== 0. 安装最新 APK / 绑定无障碍与通知监听 ==='
-adb install -r "$APK" 2>&1 | tail -1
+INSTALL_OUT=$(adb install -r "$APK" 2>&1)
+echo "$INSTALL_OUT" | tail -1
+echo "$INSTALL_OUT" | grep -q 'Success' || { echo '安装失败，中止（检查签名是否与已装版本一致）'; exit 1; }
+# 演示用的真实第三方应用：AVD 换镜像/清数据后会丢，缺了就地从缓存 APK 装。
+adb shell pm path de.danoeh.antennapod >/dev/null 2>&1 || \
+  adb install "$HERE/apks/de.danoeh.antennapod_3120195.apk" 2>&1 | tail -1
 adb shell settings put secure accessibility_enabled 0 >/dev/null 2>&1
 adb shell settings put secure enabled_accessibility_services "$PKG/com.agentruntime.service.AgentAccessibilityService" >/dev/null
 adb shell settings put secure accessibility_enabled 1 >/dev/null 2>&1

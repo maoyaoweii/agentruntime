@@ -4,11 +4,11 @@
 
 # 当前工程状态
 
-> 最新一轮见文末 **[任务 24] 2026-10-28 - 全流程实拍录屏（主界面 → 通知 → 第三方应用 → 时钟 → 上滑抽屉）**。
-> 原速 156s / 2 倍速 78s，产物 `verification/recordings/flow_20261028/`。
-> 最近一次代码改动：[任务 23] Android 原生能力增强（通知读取 / 方向滑动 / 全局键扩展），
-> 动作原语 43→**45**、技能 30→**32**；JVM **321/321** 通过，设备端 N01/N02 全绿。
-> 上一轮：[任务 22] 任务 21 遗留三问题修复 + `tap_text` 按文本点击原语 + 实机复验（C01–C06 全绿）。
+> 最新一轮见文末 **[任务 25] 2026-11-06 - GitHub 最新版本本地部署 + 全流程实战测试（T1/T2 全绿）**。
+> 本轮无业务代码改动：从 `origin/main@676e8a2` 构建 APK 并在 AOSP 11 模拟器实战
+> （通知读取 → AntennaPod 队列 → 系统时钟 → 原生手势上滑抽屉），录屏与证据已更新。
+> 最近一次代码改动：[任务 23] Android 原生能力增强；JVM **321/321**；设备端 N01/N02 全绿。
+> 上一轮：[任务 24] 全流程实拍录屏脚本与产物。
 > 历史报告：`docs/V1.7_DEVICE_VERIFICATION.md`；录屏：`verification/recordings/real_app_control_20261028.mp4`、
 > `verification/recordings/permission_flow_real_aosp_20261025.mp4`、
 > `verification/recordings/overlay_task_panel_20261025.mp4`、
@@ -3124,3 +3124,106 @@ T2_swipe_drawer      SUCCESS   4.9s  swipe=SWIPE_OK
 
 ### 收尾记录（2026-10-28）
 - 模拟器进程在录屏与取证结束后已退出（`ps` 复核无 `qemu-system`，`adb devices` 空，空闲内存 ~5.3GB），未残留实例与端口。
+
+---
+
+## [任务 25] 2026-11-06 - GitHub 最新版本本地部署 + 全流程实战测试（T1/T2 全绿）
+
+### 本次目标
+- 用户要求：「安装部署github上最新版本到本地，并进行实战测试」
+- 从 `origin/main` 最新提交构建 APK → 全新模拟器部署 → 跑通全流程实战（含真实第三方应用）
+
+### 修改前状态
+- 本地 `master == origin/main == 676e8a2`（即 [任务 24] 的提交），工作区干净，无需合并
+- 宿主代理环境变化：Gradle JVM 此前靠缓存命中构建，本轮依赖重解析失败暴露了「Gradle 不读 HTTP_PROXY 环境变量」的问题
+- AVD 用户数据为全新镜像：第三方应用（AntennaPod 等）已不在设备上
+
+### 修改前状态补充（验证环境）
+- 模拟器：37.2.12，AVD `agent_aosp30`（`ANDROID_AVD_HOME=/workspace/avd`，注意 AVD 名带 `30` 后缀）
+- boot 160s（TCG，`-accel off -cores 2 -memory 2048`），PM 就绪再 +5s
+
+### 修改记录
+
+#### 修改 1
+**文件：** `verification/record_full_flow.sh`
+**修改内容：**
+- `adb install -r` 的输出改为捕获并校验：非 `Success` 立即中止（防止旧版本静默残留，本轮首跑即因此误测旧 APK）；
+- `am start` 增加云端配置 extras（`cloud_base_url` / `cloud_api_key` / `cloud_model`），任务启动即落盘配置（走 [任务 22] 的 C02 修复路径），重装后无需手工恢复 shared_prefs；
+- 增加 AntennaPod 存在性守卫：`pm path` 查不到就地从 `verification/apks/de.danoeh.antennapod_3120195.apk` 安装。
+**修改原因：** 本轮实战首跑暴露两个环境坑：签名不匹配静默失败、AVD 换数据镜像丢第三方应用。
+**预期效果：** 脚本在干净环境下一键可复跑，不会拿旧 APK 出假结果。
+
+#### 修改 2
+**文件：** `verification/recordings/flow_20261106_2x.mp4`、`queue_page.png`、`drawer_after_swipe.png`（证据）
+**修改内容：** 本次实战的 2 倍速录屏（87s）与两张关键帧（AntennaPod Queue 页、上滑后的应用抽屉）。
+**修改原因：** 与 10-28 那次区分开；原速 `flow_20261028.mp4` 被本次覆盖（174s，11-06 内容）。
+**预期效果：** 证据与日期对应，不误引旧素材。
+
+### 遇到的问题
+
+#### 问题 1：Gradle 依赖解析失败（`com.android.application:8.6.1 not found`）
+**现象：** 首次构建失败于插件解析，Google 仓库不可达。
+**根因：** 宿主走 `http://127.0.0.1:18080` 代理（`HTTP_PROXY` 环境变量），但 Gradle JVM 不读该变量；此前构建成功纯粹靠本地缓存命中。
+**解决方案：** 构建/测试命令统一追加 `-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=18080 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=18080 -Dhttp.nonProxyHosts="localhost|127.0.0.1"`。
+**结果：** 已解决，`BUILD SUCCESSFUL in 1m 5s`。
+
+#### 问题 2：AVD 名不对（`Unknown AVD name [agent_aosp]`）
+**现象：** 沿用旧启动命令报 AVD 不存在。
+**根因：** 实际 AVD 为 `agent_aosp30`，且需 `ANDROID_AVD_HOME=/workspace/avd`。
+**解决方案：** 启动命令改为 `-avd agent_aosp30` 并导出 `ANDROID_AVD_HOME`。
+**结果：** 已解决。
+
+#### 问题 3：安装静默失败（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）
+**现象：** 首跑全流程 T1/T2 报 `SKILL_RESOLVE_FAILED`（设备上是 10-28 旧 APK，没有 V2.0 技能）。
+**根因：** 本会话 debug.keystore 与上次不同，`adb install -r` 签名不匹配被拒，脚本 `tail -1` 吞掉了错误。
+**解决方案：** 卸载重装 + 脚本加安装校验（修改 1）。
+**结果：** 已解决。
+
+#### 问题 4：云端配置随卸载丢失
+**现象：** 旧应用 `shared_prefs/model_router.xml` 随卸载删除；用 `run-as cat >` 回写遇 SELinux/属主限制（`Permission denied`）。
+**解决方案：** 不走文件回写，改用应用自身机制——`am start` 带 `cloud_base_url/cloud_api_key/cloud_model` extras（[任务 22] C02 落盘路径）。
+**结果：** 已解决，T1/T2 结果里 `cloud_configured=true`。
+
+#### 问题 5：T1 二跑报 `APP_NOT_FOUND`（AntennaPod）
+**现象：** 通知读取通过后，`launch_app de.danoeh.antennapod` 失败。
+**根因：** AVD 用户数据是全新镜像，第三方应用不存在（`pm list packages -3` 只有 AgentRuntime）。
+**解决方案：** 从 `verification/apks/` 缓存安装 AntennaPod，并在脚本里加守卫（修改 1）。
+**结果：** 已解决，三跑 T1 全绿。
+
+### 最终修改结果
+
+**本次完成：**
+- GitHub 最新版本（`676e8a2`）本地构建 + 部署 + 全流程实战测试通过
+- 实战覆盖：无障碍/通知监听绑定 → 系统通知投递与读取（`NOTIFICATIONS_LISTED`）→ 真实第三方应用 AntennaPod 启动并点进 Queue（`TAP_TEXT_OK`）→ 系统时钟（`CLICK_OK/ASSERT_OK/RECOVER_BACK`）→ 原生手势上滑应用抽屉（`SWIPE_OK`）
+
+**涉及文件：**
+- `verification/record_full_flow.sh`（安装校验 + 云端 extras + AntennaPod 守卫）
+- `verification/recordings/flow_20261028/`（新原速录屏 174s、`flow_20261106_2x.mp4` 87s、T1/T2 json/xml、关键帧）
+
+**关键参数/配置变化：**
+- Gradle 构建：新增代理系统属性（`127.0.0.1:18080`）
+- 模拟器：`-avd agent_aosp30` + `ANDROID_AVD_HOME=/workspace/avd`
+
+### 验证情况
+- 构建：`:agent:assembleDebug` BUILD SUCCESSFUL（JDK 17 / Gradle 8.14.6，APK 36MB，11-06 12:04）
+- 设备端实战（AOSP 11 720x1280 TCG，`versionName=1.6.0`，`lastUpdateTime=2026-11-06 12:16`）：
+```
+T1_notify_app_clock  SUCCESS 88.7s  notifications=NOTIFICATIONS_LISTED
+                                    launch_and_tap_text=LAUNCH_OK/WAIT_OK/TAP_TEXT_OK（AntennaPod Queue）
+                                    open_clock=LAUNCH_OK/WAIT_OK/CLICK_OK/ASSERT_OK/RECOVER_BACK
+T2_swipe_drawer      SUCCESS  5.2s  swipe=SWIPE_OK → 抽屉 xml 含 AgentRuntime/AntennaPod/Clock/... 全列表
+```
+- 视频核验：h264 720x1280 174.5s；抽帧 45s=AntennaPod 启动页、75s=Queue 页、145s=桌面、155/165s=抽屉（亮度 10→251 变化正常）
+- 单测：本轮未改业务代码，未重跑（沿用 [任务 23] 强制重跑的 321/321）
+- 真机：未进行
+
+### 遗留问题
+1. 模拟器 CPU 核数告警「will run more smoothly with 4 CPU cores」（宿主限 3 核，按内存规则保持 `-cores 2`）；
+2. 首跑误测旧 APK 的录屏已被覆盖，过程证据以本日志文字记录为准；
+3. 云端 Planner 未实际调用（本流程为显式 steps，不需要 LLM）；`cloud_proxy.py` 本轮未启动。
+
+### 当前状态
+`完成：最新版本部署 + T1/T2 全流程实战全绿，录屏/证据已更新`
+
+### 收尾记录（2026-11-06）
+- `adb emu kill` 后复核：无 qemu 进程、`adb devices` 空、空闲内存 ~4.5GB；无残留端口。
